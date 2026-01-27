@@ -6,16 +6,14 @@
 //
 
 import SwiftUI
-import CoreData
 
 @main
 struct CalSyncApp: App {
-    let persistenceController = PersistenceController.shared
+    @NSApplicationDelegateAdaptor(AppCoordinator.self) private var appCoordinator
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+        Settings {
+            EmptyView()
         }
     }
 }
