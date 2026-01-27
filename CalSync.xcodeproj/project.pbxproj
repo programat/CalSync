@@ -25,8 +25,9 @@
 
 /* Begin PBXFileReference section */
 		10FB15DA2F28C4C5000D5C92 /* CalSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		10FB15EC2F28C4C8000D5C92 /* CalSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CalSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		10FB15F62F28C4C8000D5C92 /* CalSyncUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CalSyncUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		10FB15EC2F28C4C8000D5C92 /* AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		10FB15F62F28C4C8000D5C92 /* AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		10FB16092F28C517000D5C92 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,14 +36,14 @@
 			path = CalSync;
 			sourceTree = "<group>";
 		};
-		10FB15EF2F28C4C8000D5C92 /* CalSyncTests */ = {
+		10FB15EF2F28C4C8000D5C92 /* AppTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = CalSyncTests;
+			path = AppTests;
 			sourceTree = "<group>";
 		};
-		10FB15F92F28C4C8000D5C92 /* CalSyncUITests */ = {
+		10FB15F92F28C4C8000D5C92 /* AppUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = CalSyncUITests;
+			path = AppUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +76,10 @@
 		10FB15D12F28C4C5000D5C92 = {
 			isa = PBXGroup;
 			children = (
+				10FB16092F28C517000D5C92 /* AGENTS.md */,
 				10FB15DC2F28C4C5000D5C92 /* CalSync */,
-				10FB15EF2F28C4C8000D5C92 /* CalSyncTests */,
-				10FB15F92F28C4C8000D5C92 /* CalSyncUITests */,
+				10FB15EF2F28C4C8000D5C92 /* AppTests */,
+				10FB15F92F28C4C8000D5C92 /* AppUITests */,
 				10FB15DB2F28C4C5000D5C92 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,8 +88,8 @@
 			isa = PBXGroup;
 			children = (
 				10FB15DA2F28C4C5000D5C92 /* CalSync.app */,
-				10FB15EC2F28C4C8000D5C92 /* CalSyncTests.xctest */,
-				10FB15F62F28C4C8000D5C92 /* CalSyncUITests.xctest */,
+				10FB15EC2F28C4C8000D5C92 /* AppTests.xctest */,
+				10FB15F62F28C4C8000D5C92 /* AppUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,9 +119,9 @@
 			productReference = 10FB15DA2F28C4C5000D5C92 /* CalSync.app */;
 			productType = "com.apple.product-type.application";
 		};
-		10FB15EB2F28C4C8000D5C92 /* CalSyncTests */ = {
+		10FB15EB2F28C4C8000D5C92 /* AppTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 10FB16032F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "CalSyncTests" */;
+			buildConfigurationList = 10FB16032F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "AppTests" */;
 			buildPhases = (
 				10FB15E82F28C4C8000D5C92 /* Sources */,
 				10FB15E92F28C4C8000D5C92 /* Frameworks */,
@@ -131,18 +133,18 @@
 				10FB15EE2F28C4C8000D5C92 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				10FB15EF2F28C4C8000D5C92 /* CalSyncTests */,
+				10FB15EF2F28C4C8000D5C92 /* AppTests */,
 			);
-			name = CalSyncTests;
+			name = AppTests;
 			packageProductDependencies = (
 			);
-			productName = CalSyncTests;
-			productReference = 10FB15EC2F28C4C8000D5C92 /* CalSyncTests.xctest */;
+			productName = AppTests;
+			productReference = 10FB15EC2F28C4C8000D5C92 /* AppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		10FB15F52F28C4C8000D5C92 /* CalSyncUITests */ = {
+		10FB15F52F28C4C8000D5C92 /* AppUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 10FB16062F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "CalSyncUITests" */;
+			buildConfigurationList = 10FB16062F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "AppUITests" */;
 			buildPhases = (
 				10FB15F22F28C4C8000D5C92 /* Sources */,
 				10FB15F32F28C4C8000D5C92 /* Frameworks */,
@@ -154,13 +156,13 @@
 				10FB15F82F28C4C8000D5C92 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				10FB15F92F28C4C8000D5C92 /* CalSyncUITests */,
+				10FB15F92F28C4C8000D5C92 /* AppUITests */,
 			);
-			name = CalSyncUITests;
+			name = AppUITests;
 			packageProductDependencies = (
 			);
-			productName = CalSyncUITests;
-			productReference = 10FB15F62F28C4C8000D5C92 /* CalSyncUITests.xctest */;
+			productName = AppUITests;
+			productReference = 10FB15F62F28C4C8000D5C92 /* AppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -201,8 +203,8 @@
 			projectRoot = "";
 			targets = (
 				10FB15D92F28C4C5000D5C92 /* CalSync */,
-				10FB15EB2F28C4C8000D5C92 /* CalSyncTests */,
-				10FB15F52F28C4C8000D5C92 /* CalSyncUITests */,
+				10FB15EB2F28C4C8000D5C92 /* AppTests */,
+				10FB15F52F28C4C8000D5C92 /* AppUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -323,7 +325,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -381,7 +383,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -394,6 +396,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = CalSync/CalSync.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -403,11 +407,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCALENDARSUSAGEDESCRIPTION = "CalSync нужен доступ к календарям, чтобы читать события источника и создавать их копии в дочернем календаре.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.CalSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -426,6 +432,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = CalSync/CalSync.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -435,11 +443,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCALENDARSUSAGEDESCRIPTION = "CalSync нужен доступ к календарям, чтобы читать события источника и создавать их копии в дочернем календаре.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.CalSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -461,9 +471,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = UBP78X5YGA;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.CalSyncTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.AppTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -482,9 +492,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = UBP78X5YGA;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.CalSyncTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.AppTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -503,7 +513,7 @@
 				DEVELOPMENT_TEAM = UBP78X5YGA;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.CalSyncUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.AppUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -522,7 +532,7 @@
 				DEVELOPMENT_TEAM = UBP78X5YGA;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.CalSyncUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tumashev.AppUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -554,7 +564,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		10FB16032F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "CalSyncTests" */ = {
+		10FB16032F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "AppTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				10FB16042F28C4C8000D5C92 /* Debug */,
@@ -563,7 +573,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		10FB16062F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "CalSyncUITests" */ = {
+		10FB16062F28C4C8000D5C92 /* Build configuration list for PBXNativeTarget "AppUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				10FB16072F28C4C8000D5C92 /* Debug */,
