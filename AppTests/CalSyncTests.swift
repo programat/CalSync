@@ -10,8 +10,34 @@ import Testing
 
 struct CalSyncTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    @Test func placeholderSyncUpdatesState() async throws {
+        let viewModel = await AppViewModel()
+        let initialErrors = await viewModel.errors.count
+        let initialCreated = await viewModel.createdCount
+
+        await viewModel.placeholderSync()
+
+        let status = await viewModel.status
+        #expect(status == .idle)
+        #expect(await viewModel.lastSyncAt != nil)
+        #expect(await viewModel.createdCount == initialCreated + 1)
+        #expect(await viewModel.errors.count == initialErrors + 1)
+    }
+
+    @Test func placeholderResetClearsCounts() async throws {
+        let viewModel = await AppViewModel()
+        await viewModel.placeholderSync()
+        await viewModel.placeholderSync()
+
+        let initialErrors = await viewModel.errors.count
+        await viewModel.placeholderReset()
+
+        let status = await viewModel.status
+        #expect(status == .idle)
+        #expect(await viewModel.createdCount == 0)
+        #expect(await viewModel.updatedCount == 0)
+        #expect(await viewModel.deletedCount == 0)
+        #expect(await viewModel.errors.count == initialErrors + 1)
     }
 
 }

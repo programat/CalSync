@@ -11,6 +11,7 @@ import SwiftUI
 @MainActor
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private let viewModel = AppViewModel()
 
     func showMainWindow() {
         let window = window ?? createWindow()
@@ -24,6 +25,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     private func createWindow() -> NSWindow {
         let view = MainWindowView()
+            .environmentObject(viewModel)
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 360),
