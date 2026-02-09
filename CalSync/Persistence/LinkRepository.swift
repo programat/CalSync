@@ -61,6 +61,15 @@ final class LinkRepository {
         }
     }
 
+    func deleteAll() throws {
+        try context.performAndWait {
+            let request = SyncedEventLink.fetchRequest()
+            let links = try context.fetch(request)
+            links.forEach(context.delete)
+            try saveIfNeeded()
+        }
+    }
+
     @discardableResult
     func update(id: UUID, payload: SyncedEventLinkPayload) throws -> SyncedEventLink? {
         try context.performAndWait {

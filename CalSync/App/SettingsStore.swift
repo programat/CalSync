@@ -7,14 +7,14 @@
 
 import Foundation
 
-protocol SettingsStore: AnyObject {
+nonisolated protocol SettingsStore: AnyObject {
     var sourceCalendarId: String? { get set }
     var childCalendarId: String? { get set }
     var daysBack: Int { get set }
     var daysForward: Int { get set }
 }
 
-final class UserDefaultsSettingsStore: SettingsStore {
+nonisolated final class UserDefaultsSettingsStore: SettingsStore {
     static let defaultDaysBack = 30
     static let defaultDaysForward = 90
 

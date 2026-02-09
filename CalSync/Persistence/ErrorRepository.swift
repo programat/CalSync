@@ -58,6 +58,15 @@ final class ErrorRepository {
         }
     }
 
+    func deleteAll() throws {
+        try context.performAndWait {
+            let request = SyncError.fetchRequest()
+            let errors = try context.fetch(request)
+            errors.forEach(context.delete)
+            try saveIfNeeded()
+        }
+    }
+
     private func saveIfNeeded() throws {
         if context.hasChanges {
             try context.save()

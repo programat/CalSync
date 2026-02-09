@@ -7,7 +7,7 @@
 
 import Foundation
 
-protocol EventKitGateway {
+nonisolated protocol EventKitGateway {
     func requestAccess() async throws
     func fetchCalendars() throws -> [CalendarInfo]
     func fetchEvents(calendarId: String, from: Date, to: Date) throws -> [EventInfo]
@@ -18,7 +18,7 @@ protocol EventKitGateway {
     func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject
 }
 
-enum EventKitGatewayError: Error, Equatable {
+nonisolated enum EventKitGatewayError: Error, Equatable {
     case accessDenied
     case calendarNotFound
     case eventNotFound
