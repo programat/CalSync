@@ -157,7 +157,9 @@ struct MainWindowView: View {
     }
 }
 
-#Preview {
-    MainWindowView()
-        .environmentObject(AppViewModel())
+struct MainWindowView_Previews: PreviewProvider {
+    static var previews: some View {
+        MainWindowView()
+            .environmentObject(AppViewModel())
+    }
 }
