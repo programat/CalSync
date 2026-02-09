@@ -17,8 +17,13 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func requestAccess() async throws {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if status == .authorized || status == .fullAccess {
+            return
+        }
+
         let granted = try await eventStore.requestFullAccessToEvents()
-        if !granted {
+        guard granted else {
             throw EventKitGatewayError.accessDenied
         }
     }

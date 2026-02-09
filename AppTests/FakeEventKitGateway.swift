@@ -9,11 +9,21 @@ import Foundation
 @testable import CalSync
 
 final class FakeEventKitGateway: EventKitGateway {
+    var requestAccessError: Error?
+    var calendarsToReturn: [CalendarInfo] = []
+    var fetchCalendarsError: Error?
+
     func requestAccess() async throws {
+        if let requestAccessError {
+            throw requestAccessError
+        }
     }
 
     func fetchCalendars() throws -> [CalendarInfo] {
-        []
+        if let fetchCalendarsError {
+            throw fetchCalendarsError
+        }
+        return calendarsToReturn
     }
 
     func fetchEvents(calendarId: String, from: Date, to: Date) throws -> [EventInfo] {

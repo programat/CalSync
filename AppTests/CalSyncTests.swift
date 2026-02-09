@@ -40,4 +40,36 @@ struct CalSyncTests {
         #expect(await viewModel.errors.count == initialErrors + 1)
     }
 
+    @Test func onAppStartRequestsAccessAndLoadsCalendars() async throws {
+        let gateway = FakeEventKitGateway()
+        gateway.calendarsToReturn = [
+            CalendarInfo(id: "source-id", title: "Source", sourceTitle: "iCloud", isWritable: false),
+            CalendarInfo(id: "child-id", title: "Child", sourceTitle: "iCloud", isWritable: true),
+        ]
+        let viewModel = await AppViewModel(eventKitGateway: gateway)
+
+        await viewModel.onAppStart()
+
+        #expect(await viewModel.status == .idle)
+        #expect(await viewModel.sourceCalendars.count == 2)
+        #expect(await viewModel.childCalendars.map(\.id) == ["child-id"])
+    }
+
+    @Test func requestCalendarAccessSetsErrorOnDeniedAccess() async throws {
+        let gateway = FakeEventKitGateway()
+        gateway.requestAccessError = EventKitGatewayError.accessDenied
+        let viewModel = await AppViewModel(eventKitGateway: gateway)
+
+        await viewModel.requestCalendarAccess()
+
+        let status = await viewModel.status
+        if case .error(let message) = status {
+            #expect(message?.contains("Нет доступа к календарям") == true)
+        } else {
+            #expect(Bool(false))
+        }
+        #expect(await viewModel.errors.count == 1)
+        #expect(await viewModel.sourceCalendars.isEmpty)
+    }
+
 }

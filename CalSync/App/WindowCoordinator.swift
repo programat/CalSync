@@ -11,7 +11,11 @@ import SwiftUI
 @MainActor
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private var window: NSWindow?
-    private let viewModel = AppViewModel()
+    private let viewModel = AppViewModel(eventKitGateway: EventKitGatewayImpl())
+
+    func onAppStart() async {
+        await viewModel.onAppStart()
+    }
 
     func showMainWindow() {
         let window = window ?? createWindow()

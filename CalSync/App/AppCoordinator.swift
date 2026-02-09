@@ -23,5 +23,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     func showMainWindow() {
         NSApp.setActivationPolicy(.regular)
         windowCoordinator.showMainWindow()
+        Task { @MainActor in
+            await windowCoordinator.onAppStart()
+        }
     }
 }

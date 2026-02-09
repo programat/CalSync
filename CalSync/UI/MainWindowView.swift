@@ -10,9 +10,6 @@ import SwiftUI
 struct MainWindowView: View {
     @EnvironmentObject private var viewModel: AppViewModel
 
-    private let sourceOptions = ["Personal", "Work", "Family"]
-    private let childOptions = ["Mirror", "Archive", "Shared"]
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -33,14 +30,14 @@ struct MainWindowView: View {
                 .font(.headline)
             Picker("Source Calendar", selection: $viewModel.sourceCalendarId) {
                 Text("Not selected").tag(String?.none)
-                ForEach(sourceOptions, id: \.self) { option in
-                    Text(option).tag(String?.some(option))
+                ForEach(viewModel.sourceCalendars) { calendar in
+                    Text(calendarTitle(calendar)).tag(String?.some(calendar.id))
                 }
             }
             Picker("Child Calendar", selection: $viewModel.childCalendarId) {
                 Text("Not selected").tag(String?.none)
-                ForEach(childOptions, id: \.self) { option in
-                    Text(option).tag(String?.some(option))
+                ForEach(viewModel.childCalendars) { calendar in
+                    Text(calendarTitle(calendar)).tag(String?.some(calendar.id))
                 }
             }
         }
@@ -95,6 +92,19 @@ struct MainWindowView: View {
                     }
                 }
             }
+
+            if isErrorStatus {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Для синхронизации требуется доступ к календарям в System Settings -> Privacy & Security -> Calendars.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button("Запросить доступ") {
+                        Task {
+                            await viewModel.requestCalendarAccess()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -127,6 +137,20 @@ struct MainWindowView: View {
     private func formattedDate(_ date: Date?) -> String {
         guard let date else { return "—" }
         return date.formatted(date: .abbreviated, time: .standard)
+    }
+
+    private var isErrorStatus: Bool {
+        if case .error = viewModel.status {
+            return true
+        }
+        return false
+    }
+
+    private func calendarTitle(_ calendar: CalendarInfo) -> String {
+        guard let sourceTitle = calendar.sourceTitle, !sourceTitle.isEmpty else {
+            return calendar.title
+        }
+        return "\(calendar.title) (\(sourceTitle))"
     }
 }
 
