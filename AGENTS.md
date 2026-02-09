@@ -185,6 +185,7 @@ After implementing a step, respond with:
 - Don’t store markers inside events.
 - Don’t couple UI directly to EventKit/Core Data.
 - Don’t leave the repo in a failing build/test state.
+- Don't try to run the app - you don't have provisioning profile. Only run tests if possible.
 
 ---
 
