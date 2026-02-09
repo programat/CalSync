@@ -8,6 +8,24 @@
 import CoreData
 import Foundation
 
+struct SourceEventKey {
+    let primary: String?
+    let fallback: SourceFallbackKey?
+
+    init(sourceEvent: EventInfo) {
+        primary = sourceEvent.eventId
+
+        if let calendarItemId = sourceEvent.calendarItemId {
+            fallback = SourceFallbackKey(
+                sourceCalendarItemId: calendarItemId,
+                sourceDate: sourceEvent.occurrenceDate ?? sourceEvent.startDate
+            )
+        } else {
+            fallback = nil
+        }
+    }
+}
+
 struct SourceFallbackKey {
     let sourceCalendarItemId: String
     let sourceDate: Date
@@ -115,6 +133,53 @@ final class LinkRepository {
                 key.sourceDate as CVarArg
             )
             return try context.fetch(request).first
+        }
+    }
+
+    func findLink(for sourceEvent: EventInfo) throws -> SyncedEventLink? {
+        let key = SourceEventKey(sourceEvent: sourceEvent)
+
+        if let primary = key.primary,
+           !primary.isEmpty,
+           let link = try findBySourceEventId(primary) {
+            return link
+        }
+
+        if let fallback = key.fallback {
+            return try findByFallbackKey(fallback)
+        }
+
+        return nil
+    }
+
+    func updateSourceEventIdIfNeeded(_ link: SyncedEventLink, newId: String?) throws {
+        try context.performAndWait {
+            guard
+                let linkId = link.id,
+                let newId,
+                !newId.isEmpty,
+                let persistedLink = try fetchInternal(id: linkId),
+                persistedLink.sourceEventId != newId
+            else {
+                return
+            }
+
+            persistedLink.sourceEventId = newId
+            try saveIfNeeded()
+        }
+    }
+
+    func updateLastSeenInSourceAt(_ link: SyncedEventLink, at timestamp: Date) throws {
+        try context.performAndWait {
+            guard
+                let linkId = link.id,
+                let persistedLink = try fetchInternal(id: linkId)
+            else {
+                return
+            }
+
+            persistedLink.lastSeenInSourceAt = timestamp
+            try saveIfNeeded()
         }
     }
 

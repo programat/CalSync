@@ -227,6 +227,31 @@ actor SyncEngine {
             from: window.from,
             to: window.to
         )
+
+        let lastSeenInSourceAt = dateProvider()
+        var matchedCount = 0
+        var unmatchedCount = 0
+
+        for sourceEvent in sourceEvents {
+            let didMatch = try await MainActor.run { [linkRepo] in
+                guard let link = try linkRepo.findLink(for: sourceEvent) else {
+                    return false
+                }
+                try linkRepo.updateSourceEventIdIfNeeded(link, newId: sourceEvent.eventId)
+                try linkRepo.updateLastSeenInSourceAt(link, at: lastSeenInSourceAt)
+                return true
+            }
+
+            if didMatch {
+                matchedCount += 1
+            } else {
+                unmatchedCount += 1
+            }
+        }
+
+        logger.info(
+            "Fetched source events=\(sourceEvents.count, privacy: .public), matched=\(matchedCount, privacy: .public), unmatched=\(unmatchedCount, privacy: .public)"
+        )
         return sourceEvents.count
     }
 
