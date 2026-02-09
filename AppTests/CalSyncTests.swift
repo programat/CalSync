@@ -51,8 +51,7 @@ struct CalSyncTests {
         await viewModel.onAppStart()
 
         #expect(await viewModel.status == .idle)
-        #expect(await viewModel.sourceCalendars.count == 2)
-        #expect(await viewModel.childCalendars.map(\.id) == ["child-id"])
+        #expect(await viewModel.calendars.count == 2)
     }
 
     @Test func requestCalendarAccessSetsErrorOnDeniedAccess() async throws {
@@ -69,7 +68,22 @@ struct CalSyncTests {
             #expect(Bool(false))
         }
         #expect(await viewModel.errors.count == 1)
-        #expect(await viewModel.sourceCalendars.isEmpty)
+        #expect(await viewModel.calendars.isEmpty)
+    }
+
+    @Test func selectingSameSourceAndChildClearsChildAndAddsError() async throws {
+        let viewModel = await AppViewModel()
+        await MainActor.run {
+            viewModel.calendars = [
+                CalendarInfo(id: "calendar-id", title: "Main", sourceTitle: nil, isWritable: true),
+            ]
+            viewModel.sourceCalendarId = "calendar-id"
+            viewModel.childCalendarId = "calendar-id"
+        }
+
+        #expect(await viewModel.sourceCalendarId == "calendar-id")
+        #expect(await viewModel.childCalendarId == nil)
+        #expect(await viewModel.errors.last == "Source и Child не могут быть одинаковыми.")
     }
 
 }

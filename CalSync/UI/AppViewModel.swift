@@ -16,10 +16,21 @@ final class AppViewModel: ObservableObject {
         case error(String?)
     }
 
-    @Published var sourceCalendarId: String?
-    @Published var childCalendarId: String?
-    @Published var sourceCalendars: [CalendarInfo]
-    @Published var childCalendars: [CalendarInfo]
+    @Published var sourceCalendarId: String? {
+        didSet {
+            validateSelectedCalendars()
+        }
+    }
+    @Published var childCalendarId: String? {
+        didSet {
+            validateSelectedCalendars()
+        }
+    }
+    @Published var calendars: [CalendarInfo] {
+        didSet {
+            validateSelectedCalendars()
+        }
+    }
     @Published var daysBack: Int
     @Published var daysForward: Int
     @Published var status: Status
@@ -31,13 +42,13 @@ final class AppViewModel: ObservableObject {
 
     private let eventKitGateway: EventKitGateway
     private var didStart = false
+    private var isValidatingCalendars = false
 
     init(
         eventKitGateway: EventKitGateway? = nil,
         sourceCalendarId: String? = nil,
         childCalendarId: String? = nil,
-        sourceCalendars: [CalendarInfo] = [],
-        childCalendars: [CalendarInfo] = [],
+        calendars: [CalendarInfo] = [],
         daysBack: Int = 30,
         daysForward: Int = 90,
         status: Status = .idle,
@@ -50,8 +61,7 @@ final class AppViewModel: ObservableObject {
         self.eventKitGateway = eventKitGateway ?? EventKitGatewayImpl()
         self.sourceCalendarId = sourceCalendarId
         self.childCalendarId = childCalendarId
-        self.sourceCalendars = sourceCalendars
-        self.childCalendars = childCalendars
+        self.calendars = calendars
         self.daysBack = daysBack
         self.daysForward = daysForward
         self.status = status
@@ -82,8 +92,7 @@ final class AppViewModel: ObservableObject {
     func loadCalendars() async {
         do {
             let calendars = try eventKitGateway.fetchCalendars()
-            sourceCalendars = calendars
-            childCalendars = calendars.filter(\.isWritable)
+            self.calendars = calendars
             validateSelectedCalendars()
             status = .idle
         } catch {
@@ -116,14 +125,29 @@ final class AppViewModel: ObservableObject {
     }
 
     private func validateSelectedCalendars() {
-        let sourceIds = Set(sourceCalendars.map(\.id))
-        let childIds = Set(childCalendars.map(\.id))
+        guard !isValidatingCalendars else { return }
+        isValidatingCalendars = true
+        defer { isValidatingCalendars = false }
 
-        if let sourceCalendarId, !sourceIds.contains(sourceCalendarId) {
+        let calendarIds = Set(calendars.map(\.id))
+
+        if let sourceCalendarId, !calendarIds.contains(sourceCalendarId) {
             self.sourceCalendarId = nil
         }
-        if let childCalendarId, !childIds.contains(childCalendarId) {
+        if let childCalendarId, !calendarIds.contains(childCalendarId) {
             self.childCalendarId = nil
+        }
+        if
+            let childCalendarId,
+            let childCalendar = calendars.first(where: { $0.id == childCalendarId }),
+            !childCalendar.isWritable
+        {
+            self.childCalendarId = nil
+            errors.append("Выбранный Child календарь недоступен для записи.")
+        }
+        if let sourceCalendarId, let childCalendarId, sourceCalendarId == childCalendarId {
+            self.childCalendarId = nil
+            errors.append("Source и Child не могут быть одинаковыми.")
         }
     }
 

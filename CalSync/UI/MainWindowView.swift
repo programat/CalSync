@@ -30,14 +30,17 @@ struct MainWindowView: View {
                 .font(.headline)
             Picker("Source Calendar", selection: $viewModel.sourceCalendarId) {
                 Text("Not selected").tag(String?.none)
-                ForEach(viewModel.sourceCalendars) { calendar in
+                ForEach(viewModel.calendars) { calendar in
                     Text(calendarTitle(calendar)).tag(String?.some(calendar.id))
                 }
             }
             Picker("Child Calendar", selection: $viewModel.childCalendarId) {
                 Text("Not selected").tag(String?.none)
-                ForEach(viewModel.childCalendars) { calendar in
-                    Text(calendarTitle(calendar)).tag(String?.some(calendar.id))
+                ForEach(viewModel.calendars) { calendar in
+                    Text(calendarTitle(calendar))
+                        .tag(String?.some(calendar.id))
+                        .disabled(!calendar.isWritable)
+                        .help(calendar.isWritable ? "" : "Недоступен для записи / read-only")
                 }
             }
         }
