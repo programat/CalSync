@@ -79,6 +79,8 @@ struct MainWindowView: View {
             }
             HStack(spacing: 16) {
                 Text("Total fetched: \(viewModel.totalFetchedCount)")
+                Text("Created: \(viewModel.createdCount)")
+                Text("Updated: \(viewModel.updatedCount)")
             }
             if viewModel.errors.isEmpty {
                 Text("No errors")

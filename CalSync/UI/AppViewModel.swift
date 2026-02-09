@@ -147,6 +147,9 @@ final class AppViewModel: ObservableObject {
             await syncEngine?.resetSync()
             await MainActor.run {
                 totalFetchedCount = 0
+                createdCount = 0
+                updatedCount = 0
+                deletedCount = 0
             }
         }
     }
@@ -213,9 +216,11 @@ final class AppViewModel: ObservableObject {
         switch update {
         case .syncing:
             status = .syncing
-        case .completed(let lastSyncAt, let totalFetched):
+        case .completed(let lastSyncAt, let totalFetched, let created, let updated):
             self.lastSyncAt = lastSyncAt
             totalFetchedCount = totalFetched
+            createdCount = created
+            updatedCount = updated
             status = .idle
         case .failed(let message):
             status = .error(message)

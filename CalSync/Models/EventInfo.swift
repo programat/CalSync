@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct EventInfo: Equatable {
+struct EventInfo: Equatable, Sendable {
     let eventId: String?
     let calendarItemId: String?
     let occurrenceDate: Date?
@@ -25,21 +25,21 @@ struct EventInfo: Equatable {
     let url: URL?
 }
 
-struct StructuredLocationInfo: Equatable {
+struct StructuredLocationInfo: Equatable, Sendable {
     let title: String
     let latitude: Double?
     let longitude: Double?
     let radius: Double?
 }
 
-struct AlarmInfo: Equatable {
+struct AlarmInfo: Equatable, Sendable {
     let absoluteDate: Date?
     let relativeOffset: TimeInterval?
     let structuredLocation: StructuredLocationInfo?
     let proximity: AlarmProximity
 }
 
-enum EventAvailability: Equatable {
+enum EventAvailability: Equatable, Sendable {
     case notSupported
     case busy
     case free
@@ -47,14 +47,14 @@ enum EventAvailability: Equatable {
     case unavailable
 }
 
-enum EventStatus: Equatable {
+enum EventStatus: Equatable, Sendable {
     case none
     case confirmed
     case tentative
     case canceled
 }
 
-enum AlarmProximity: Equatable {
+enum AlarmProximity: Equatable, Sendable {
     case none
     case enter
     case leave

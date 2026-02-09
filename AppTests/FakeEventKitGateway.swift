@@ -8,13 +8,34 @@
 import Foundation
 @testable import CalSync
 
+struct CreateEventCall {
+    let calendarId: String
+    let payload: EventInfo
+}
+
+struct UpdateEventCall {
+    let eventId: String
+    let payload: EventInfo
+}
+
 final class FakeEventKitGateway: EventKitGateway {
     var requestAccessError: Error?
     var calendarsToReturn: [CalendarInfo] = []
     var fetchCalendarsError: Error?
     var fetchEventsToReturn: [EventInfo] = []
     var fetchEventsError: Error?
+    var getEventError: Error?
+    var createEventError: Error?
+    var updateEventError: Error?
+    var deleteEventError: Error?
+    var eventsById: [String: EventInfo] = [:]
+
     private(set) var fetchEventsCallCount = 0
+    private(set) var getEventCallCount = 0
+    private(set) var createEventCallCount = 0
+    private(set) var updateEventCallCount = 0
+    private(set) var createEventCalls: [CreateEventCall] = []
+    private(set) var updateEventCalls: [UpdateEventCall] = []
 
     func requestAccess() async throws {
         if let requestAccessError {
@@ -38,17 +59,40 @@ final class FakeEventKitGateway: EventKitGateway {
     }
 
     func getEvent(byId: String) throws -> EventInfo? {
-        nil
+        getEventCallCount += 1
+        if let getEventError {
+            throw getEventError
+        }
+        return eventsById[byId]
     }
 
     func createEvent(in calendarId: String, payload: EventInfo) throws -> String {
-        ""
+        createEventCallCount += 1
+        if let createEventError {
+            throw createEventError
+        }
+
+        createEventCalls.append(CreateEventCall(calendarId: calendarId, payload: payload))
+        let eventId = "child-event-\(createEventCallCount)"
+        eventsById[eventId] = payload
+        return eventId
     }
 
     func updateEvent(eventId: String, payload: EventInfo) throws {
+        updateEventCallCount += 1
+        if let updateEventError {
+            throw updateEventError
+        }
+
+        updateEventCalls.append(UpdateEventCall(eventId: eventId, payload: payload))
+        eventsById[eventId] = payload
     }
 
     func deleteEvent(eventId: String) throws {
+        if let deleteEventError {
+            throw deleteEventError
+        }
+        eventsById[eventId] = nil
     }
 
     func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject {
