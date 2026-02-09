@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import CoreData
 
 @MainActor
 final class AppViewModel: ObservableObject {
@@ -45,6 +46,7 @@ final class AppViewModel: ObservableObject {
     }
     @Published var status: Status
     @Published var lastSyncAt: Date?
+    @Published var totalFetchedCount: Int
     @Published var createdCount: Int
     @Published var updatedCount: Int
     @Published var deletedCount: Int
@@ -52,6 +54,7 @@ final class AppViewModel: ObservableObject {
 
     private let eventKitGateway: EventKitGateway
     private let settingsStore: SettingsStore
+    private var syncEngine: SyncEngine?
     private var didStart = false
     private var isValidatingCalendars = false
 
@@ -65,6 +68,7 @@ final class AppViewModel: ObservableObject {
         daysForward: Int? = nil,
         status: Status = .idle,
         lastSyncAt: Date? = nil,
+        totalFetchedCount: Int = 0,
         createdCount: Int = 0,
         updatedCount: Int = 0,
         deletedCount: Int = 0,
@@ -80,16 +84,32 @@ final class AppViewModel: ObservableObject {
         self.daysForward = daysForward ?? settingsStore.daysForward
         self.status = status
         self.lastSyncAt = lastSyncAt
+        self.totalFetchedCount = totalFetchedCount
         self.createdCount = createdCount
         self.updatedCount = updatedCount
         self.deletedCount = deletedCount
         self.errors = errors
+
+        let persistence = PersistenceController.shared
+        let linkRepo = LinkRepository(context: persistence.container.viewContext)
+        let errorRepo = ErrorRepository(context: persistence.container.viewContext)
+        self.syncEngine = SyncEngine(
+            gateway: self.eventKitGateway,
+            linkRepo: linkRepo,
+            errorRepo: errorRepo,
+            settings: settingsStore,
+            onUpdate: { [weak self] update in
+                self?.applySyncUpdate(update)
+            }
+        )
     }
 
     func onAppStart() async {
         guard !didStart else { return }
         didStart = true
         await requestCalendarAccess()
+        await syncEngine?.startObservingEventStoreChanges()
+        await syncEngine?.startFallbackTimer()
     }
 
     func requestCalendarAccess() async {
@@ -113,6 +133,21 @@ final class AppViewModel: ObservableObject {
             let message = "Не удалось загрузить календари: \(error.localizedDescription)"
             status = .error(message)
             errors.append(message)
+        }
+    }
+
+    func syncNow() {
+        Task {
+            await syncEngine?.syncNow()
+        }
+    }
+
+    func resetSync() {
+        Task {
+            await syncEngine?.resetSync()
+            await MainActor.run {
+                totalFetchedCount = 0
+            }
         }
     }
 
@@ -172,5 +207,19 @@ final class AppViewModel: ObservableObject {
             return "Нет доступа к календарям. \(hint) \(resetHint)"
         }
         return "Не удалось запросить доступ к календарям: \(error.localizedDescription). \(hint) \(resetHint)"
+    }
+
+    private func applySyncUpdate(_ update: SyncEngineUpdate) {
+        switch update {
+        case .syncing:
+            status = .syncing
+        case .completed(let lastSyncAt, let totalFetched):
+            self.lastSyncAt = lastSyncAt
+            totalFetchedCount = totalFetched
+            status = .idle
+        case .failed(let message):
+            status = .error(message)
+            errors.append(message)
+        }
     }
 }

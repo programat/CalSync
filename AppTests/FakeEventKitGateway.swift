@@ -12,6 +12,9 @@ final class FakeEventKitGateway: EventKitGateway {
     var requestAccessError: Error?
     var calendarsToReturn: [CalendarInfo] = []
     var fetchCalendarsError: Error?
+    var fetchEventsToReturn: [EventInfo] = []
+    var fetchEventsError: Error?
+    private(set) var fetchEventsCallCount = 0
 
     func requestAccess() async throws {
         if let requestAccessError {
@@ -27,7 +30,11 @@ final class FakeEventKitGateway: EventKitGateway {
     }
 
     func fetchEvents(calendarId: String, from: Date, to: Date) throws -> [EventInfo] {
-        []
+        fetchEventsCallCount += 1
+        if let fetchEventsError {
+            throw fetchEventsError
+        }
+        return fetchEventsToReturn
     }
 
     func getEvent(byId: String) throws -> EventInfo? {

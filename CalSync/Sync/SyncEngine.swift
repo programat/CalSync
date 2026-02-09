@@ -26,10 +26,27 @@ nonisolated struct ContinuousSyncEngineClock: SyncEngineClock {
     }
 }
 
+nonisolated enum SyncEngineUpdate: Equatable, Sendable {
+    case syncing
+    case completed(lastSyncAt: Date, totalFetched: Int)
+    case failed(message: String)
+}
+
+nonisolated enum SyncEngineError: LocalizedError {
+    case calendarsNotSelected
+
+    var errorDescription: String? {
+        switch self {
+        case .calendarsNotSelected:
+            return "Source и Child календари должны быть выбраны."
+        }
+    }
+}
+
 actor SyncEngine {
     typealias DateProvider = @Sendable () -> Date
-    typealias LastSyncCallback = @MainActor @Sendable (Date) -> Void
-    typealias SyncWork = @Sendable (Set<SyncReason>) async -> Void
+    typealias UpdateHandler = @MainActor @Sendable (SyncEngineUpdate) async -> Void
+    typealias SyncWork = @Sendable (Set<SyncReason>) async throws -> Int
 
     private let gateway: EventKitGateway
     private let linkRepo: LinkRepository
@@ -39,8 +56,9 @@ actor SyncEngine {
     private let clock: any SyncEngineClock
     private let debounceDuration: Duration
     private let fallbackInterval: Duration
-    private let onLastSyncAtUpdated: LastSyncCallback?
-    private let performSyncWork: SyncWork
+    private let calendar: Calendar
+    private let onUpdate: UpdateHandler?
+    private let syncWorkOverride: SyncWork?
     private let logger = Logger(subsystem: "CalSync", category: "SyncEngine")
 
     private var eventStoreObserver: AnyObject?
@@ -59,8 +77,9 @@ actor SyncEngine {
         clock: any SyncEngineClock = ContinuousSyncEngineClock(),
         debounceDuration: Duration = .seconds(2),
         fallbackInterval: Duration = .seconds(15 * 60),
-        onLastSyncAtUpdated: LastSyncCallback? = nil,
-        performSyncWork: SyncWork? = nil
+        calendar: Calendar = .current,
+        onUpdate: UpdateHandler? = nil,
+        syncWorkOverride: SyncWork? = nil
     ) {
         self.gateway = gateway
         self.linkRepo = linkRepo
@@ -70,8 +89,9 @@ actor SyncEngine {
         self.clock = clock
         self.debounceDuration = debounceDuration
         self.fallbackInterval = fallbackInterval
-        self.onLastSyncAtUpdated = onLastSyncAtUpdated
-        self.performSyncWork = performSyncWork ?? { _ in }
+        self.calendar = calendar
+        self.onUpdate = onUpdate
+        self.syncWorkOverride = syncWorkOverride
     }
 
     deinit {
@@ -159,15 +179,79 @@ actor SyncEngine {
             let reasons = pendingReasons
             pendingReasons.removeAll()
 
-            logger.info("Sync started. reasons=\(String(describing: reasons), privacy: .public)")
-            await performSyncWork(reasons)
-            let finishedAt = dateProvider()
-            logger.info("Sync finished at \(finishedAt.formatted(date: .abbreviated, time: .standard), privacy: .public)")
-            if let onLastSyncAtUpdated {
-                await onLastSyncAtUpdated(finishedAt)
+            if let onUpdate {
+                await onUpdate(.syncing)
+            }
+
+            do {
+                logger.info("Sync started. reasons=\(String(describing: reasons), privacy: .public)")
+                let totalFetched = try await sync(reasons: reasons)
+                let finishedAt = dateProvider()
+                logger.info("Sync finished at \(finishedAt.formatted(date: .abbreviated, time: .standard), privacy: .public)")
+                if let onUpdate {
+                    await onUpdate(.completed(lastSyncAt: finishedAt, totalFetched: totalFetched))
+                }
+            } catch {
+                let message = syncErrorMessage(for: error)
+                logger.error("Sync failed: \(message, privacy: .public)")
+                if let onUpdate {
+                    await onUpdate(.failed(message: message))
+                }
             }
 
             isSyncing = false
         } while needResync || !pendingReasons.isEmpty
+    }
+
+    private func sync(reasons: Set<SyncReason>) async throws -> Int {
+        if let syncWorkOverride {
+            return try await syncWorkOverride(reasons)
+        }
+
+        guard
+            let sourceCalendarId = settings.sourceCalendarId,
+            let childCalendarId = settings.childCalendarId
+        else {
+            throw SyncEngineError.calendarsNotSelected
+        }
+        _ = childCalendarId
+
+        let window = Self.computeWindow(
+            now: dateProvider(),
+            daysBack: settings.daysBack,
+            daysForward: settings.daysForward,
+            calendar: calendar
+        )
+        let sourceEvents = try gateway.fetchEvents(
+            calendarId: sourceCalendarId,
+            from: window.from,
+            to: window.to
+        )
+        return sourceEvents.count
+    }
+
+    private func syncErrorMessage(for error: Error) -> String {
+        if let localizedError = error as? LocalizedError, let message = localizedError.errorDescription {
+            return message
+        }
+        return error.localizedDescription
+    }
+
+    nonisolated static func computeWindow(
+        now: Date,
+        daysBack: Int,
+        daysForward: Int,
+        calendar: Calendar = .current
+    ) -> (from: Date, to: Date) {
+        let safeDaysBack = max(0, daysBack)
+        let safeDaysForward = max(0, daysForward)
+
+        let fromAnchor = calendar.date(byAdding: .day, value: -safeDaysBack, to: now) ?? now
+        let toAnchor = calendar.date(byAdding: .day, value: safeDaysForward, to: now) ?? now
+
+        let from = calendar.startOfDay(for: fromAnchor)
+        let toDayInterval = calendar.dateInterval(of: .day, for: toAnchor)
+        let to = (toDayInterval?.end ?? toAnchor).addingTimeInterval(-1)
+        return (from: from, to: to)
     }
 }

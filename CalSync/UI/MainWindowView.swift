@@ -78,9 +78,7 @@ struct MainWindowView: View {
                 Text("Last sync: \(formattedDate(viewModel.lastSyncAt))")
             }
             HStack(spacing: 16) {
-                Text("Created: \(viewModel.createdCount)")
-                Text("Updated: \(viewModel.updatedCount)")
-                Text("Deleted: \(viewModel.deletedCount)")
+                Text("Total fetched: \(viewModel.totalFetchedCount)")
             }
             if viewModel.errors.isEmpty {
                 Text("No errors")
@@ -117,10 +115,10 @@ struct MainWindowView: View {
                 .font(.headline)
             HStack(spacing: 12) {
                 Button("Sync now") {
-                    viewModel.placeholderSync()
+                    viewModel.syncNow()
                 }
                 Button("Reset sync") {
-                    viewModel.placeholderReset()
+                    viewModel.resetSync()
                 }
             }
         }
