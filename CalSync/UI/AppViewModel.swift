@@ -18,11 +18,13 @@ final class AppViewModel: ObservableObject {
 
     @Published var sourceCalendarId: String? {
         didSet {
+            settingsStore.sourceCalendarId = sourceCalendarId
             validateSelectedCalendars()
         }
     }
     @Published var childCalendarId: String? {
         didSet {
+            settingsStore.childCalendarId = childCalendarId
             validateSelectedCalendars()
         }
     }
@@ -31,8 +33,16 @@ final class AppViewModel: ObservableObject {
             validateSelectedCalendars()
         }
     }
-    @Published var daysBack: Int
-    @Published var daysForward: Int
+    @Published var daysBack: Int {
+        didSet {
+            settingsStore.daysBack = daysBack
+        }
+    }
+    @Published var daysForward: Int {
+        didSet {
+            settingsStore.daysForward = daysForward
+        }
+    }
     @Published var status: Status
     @Published var lastSyncAt: Date?
     @Published var createdCount: Int
@@ -41,16 +51,18 @@ final class AppViewModel: ObservableObject {
     @Published var errors: [String]
 
     private let eventKitGateway: EventKitGateway
+    private let settingsStore: SettingsStore
     private var didStart = false
     private var isValidatingCalendars = false
 
     init(
         eventKitGateway: EventKitGateway? = nil,
+        settingsStore: SettingsStore? = nil,
         sourceCalendarId: String? = nil,
         childCalendarId: String? = nil,
         calendars: [CalendarInfo] = [],
-        daysBack: Int = 30,
-        daysForward: Int = 90,
+        daysBack: Int? = nil,
+        daysForward: Int? = nil,
         status: Status = .idle,
         lastSyncAt: Date? = nil,
         createdCount: Int = 0,
@@ -58,12 +70,14 @@ final class AppViewModel: ObservableObject {
         deletedCount: Int = 0,
         errors: [String] = []
     ) {
+        let settingsStore = settingsStore ?? UserDefaultsSettingsStore()
         self.eventKitGateway = eventKitGateway ?? EventKitGatewayImpl()
-        self.sourceCalendarId = sourceCalendarId
-        self.childCalendarId = childCalendarId
+        self.settingsStore = settingsStore
+        self.sourceCalendarId = sourceCalendarId ?? settingsStore.sourceCalendarId
+        self.childCalendarId = childCalendarId ?? settingsStore.childCalendarId
         self.calendars = calendars
-        self.daysBack = daysBack
-        self.daysForward = daysForward
+        self.daysBack = daysBack ?? settingsStore.daysBack
+        self.daysForward = daysForward ?? settingsStore.daysForward
         self.status = status
         self.lastSyncAt = lastSyncAt
         self.createdCount = createdCount

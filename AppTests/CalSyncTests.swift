@@ -5,6 +5,7 @@
 //  Created by Тумашев Дмитрий Сергеевич on 27.01.2026.
 //
 
+import Foundation
 import Testing
 @testable import CalSync
 
@@ -86,4 +87,65 @@ struct CalSyncTests {
         #expect(await viewModel.errors.last == "Source и Child не могут быть одинаковыми.")
     }
 
+    @Test func appViewModelInitReadsSettingsFromStore() async throws {
+        let (store, userDefaults, suiteName) = makeSettingsStore()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        store.sourceCalendarId = "stored-source"
+        store.childCalendarId = "stored-child"
+        store.daysBack = 7
+        store.daysForward = 21
+
+        let viewModel = await AppViewModel(
+            eventKitGateway: FakeEventKitGateway(),
+            settingsStore: store
+        )
+
+        #expect(await viewModel.sourceCalendarId == "stored-source")
+        #expect(await viewModel.childCalendarId == "stored-child")
+        #expect(await viewModel.daysBack == 7)
+        #expect(await viewModel.daysForward == 21)
+    }
+
+    @Test func appViewModelPersistsAndRestoresSettings() async throws {
+        let (store, userDefaults, suiteName) = makeSettingsStore()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        let firstViewModel = await AppViewModel(
+            eventKitGateway: FakeEventKitGateway(),
+            settingsStore: store
+        )
+
+        await MainActor.run {
+            firstViewModel.calendars = [
+                CalendarInfo(id: "source-id", title: "Source", sourceTitle: "iCloud", isWritable: true),
+                CalendarInfo(id: "child-id", title: "Child", sourceTitle: "iCloud", isWritable: true),
+            ]
+            firstViewModel.sourceCalendarId = "source-id"
+            firstViewModel.childCalendarId = "child-id"
+            firstViewModel.daysBack = 3
+            firstViewModel.daysForward = 45
+        }
+
+        let secondViewModel = await AppViewModel(
+            eventKitGateway: FakeEventKitGateway(),
+            settingsStore: store
+        )
+
+        #expect(await secondViewModel.sourceCalendarId == "source-id")
+        #expect(await secondViewModel.childCalendarId == "child-id")
+        #expect(await secondViewModel.daysBack == 3)
+        #expect(await secondViewModel.daysForward == 45)
+    }
+
+}
+
+private func makeSettingsStore() -> (UserDefaultsSettingsStore, UserDefaults, String) {
+    let suiteName = "CalSyncTests.Settings.\(UUID().uuidString)"
+    guard let userDefaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("Failed to create UserDefaults suite \(suiteName)")
+    }
+    userDefaults.removePersistentDomain(forName: suiteName)
+    let store = UserDefaultsSettingsStore(userDefaults: userDefaults)
+    return (store, userDefaults, suiteName)
 }
