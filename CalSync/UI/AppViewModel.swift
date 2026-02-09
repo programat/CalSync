@@ -216,11 +216,12 @@ final class AppViewModel: ObservableObject {
         switch update {
         case .syncing:
             status = .syncing
-        case .completed(let lastSyncAt, let totalFetched, let created, let updated):
+        case .completed(let lastSyncAt, let totalFetched, let created, let updated, let deleted):
             self.lastSyncAt = lastSyncAt
             totalFetchedCount = totalFetched
             createdCount = created
             updatedCount = updated
+            deletedCount = deleted
             status = .idle
         case .failed(let message):
             status = .error(message)

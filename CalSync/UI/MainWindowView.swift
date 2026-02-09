@@ -81,6 +81,7 @@ struct MainWindowView: View {
                 Text("Total fetched: \(viewModel.totalFetchedCount)")
                 Text("Created: \(viewModel.createdCount)")
                 Text("Updated: \(viewModel.updatedCount)")
+                Text("Deleted: \(viewModel.deletedCount)")
             }
             if viewModel.errors.isEmpty {
                 Text("No errors")

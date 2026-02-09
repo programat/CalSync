@@ -8,7 +8,7 @@
 import CoreData
 import Foundation
 
-struct SourceEventKey {
+nonisolated struct SourceEventKey {
     let primary: String?
     let fallback: SourceFallbackKey?
 
@@ -26,7 +26,7 @@ struct SourceEventKey {
     }
 }
 
-struct SourceFallbackKey {
+nonisolated struct SourceFallbackKey: Hashable, Sendable {
     let sourceCalendarItemId: String
     let sourceDate: Date
 }

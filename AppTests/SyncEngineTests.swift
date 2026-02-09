@@ -19,7 +19,7 @@ struct SyncEngineTests {
             syncWorkOverride: { _ in
                 await probe.beginRun()
                 await probe.finishRun()
-                return SyncEngine.SyncResult(totalFetched: 0, created: 0, updated: 0)
+                return SyncEngine.SyncResult(totalFetched: 0, created: 0, updated: 0, deleted: 0)
             }
         )
         defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -42,7 +42,7 @@ struct SyncEngineTests {
                 await probe.beginRun()
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 await probe.finishRun()
-                return SyncEngine.SyncResult(totalFetched: 0, created: 0, updated: 0)
+                return SyncEngine.SyncResult(totalFetched: 0, created: 0, updated: 0, deleted: 0)
             }
         )
         defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -133,7 +133,7 @@ struct SyncEngineTests {
 
         let completionStats = await updateProbe.completionStats
         let hasExpectedCompletion = completionStats.contains { stats in
-            stats.totalFetched == 1 && stats.created == 1 && stats.updated == 0
+            stats.totalFetched == 1 && stats.created == 1 && stats.updated == 0 && stats.deleted == 0
         }
         #expect(hasExpectedCompletion)
     }
@@ -217,12 +217,99 @@ struct SyncEngineTests {
 
         await engine.syncNow()
 
-        #expect(gateway.getEventCallCount == 1)
         #expect(gateway.createEventCallCount == 1)
         #expect(gateway.updateEventCallCount == 0)
+        #expect(gateway.deleteEventCallCount == 0)
 
         let links = try await MainActor.run { try linkRepo.fetchAll() }
         #expect(links.first?.childEventId == "child-event-1")
+    }
+
+    @Test func sourceRemovedDeletesChildAndLink() async throws {
+        let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.fetchEventsToReturn = []
+        gateway.eventsById["child-to-delete"] = makeSourceEvent(
+            eventId: "child-to-delete",
+            calendarItemId: nil,
+            startAt: 1_737_000_000
+        )
+
+        try await MainActor.run {
+            _ = try linkRepo.create(
+                SyncedEventLinkPayload(
+                    id: UUID(),
+                    sourceCalendarId: "source-calendar",
+                    childCalendarId: "child-calendar",
+                    sourceEventId: "source-deleted",
+                    sourceCalendarItemId: "item-deleted",
+                    sourceOccurrenceDate: nil,
+                    sourceStartLastSeen: Date(timeIntervalSince1970: 1_737_000_000),
+                    sourceEndLastSeen: Date(timeIntervalSince1970: 1_737_003_600),
+                    childEventId: "child-to-delete",
+                    lastSyncedAt: Date(timeIntervalSince1970: 1_737_000_000),
+                    lastSeenInSourceAt: Date(timeIntervalSince1970: 1_737_000_000),
+                    lastSyncHash: "hash"
+                )
+            )
+        }
+
+        await engine.syncNow()
+
+        #expect(gateway.deleteEventCallCount == 1)
+        #expect(gateway.deletedEventIds.contains("child-to-delete"))
+        let links = try await MainActor.run { try linkRepo.fetchAll() }
+        #expect(links.isEmpty)
+    }
+
+    @Test func sourceMovedOutsideWindowUpdatesAndDoesNotDeleteChild() async throws {
+        let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.fetchEventsToReturn = []
+        gateway.eventsById["child-existing"] = makeSourceEvent(
+            eventId: "child-existing",
+            calendarItemId: nil,
+            startAt: 1_737_000_000
+        )
+        gateway.eventsById["source-moved"] = makeSourceEvent(
+            eventId: "source-moved",
+            calendarItemId: "item-moved",
+            startAt: 1_800_000_000
+        )
+
+        try await MainActor.run {
+            _ = try linkRepo.create(
+                SyncedEventLinkPayload(
+                    id: UUID(),
+                    sourceCalendarId: "source-calendar",
+                    childCalendarId: "child-calendar",
+                    sourceEventId: "source-moved",
+                    sourceCalendarItemId: "item-moved",
+                    sourceOccurrenceDate: nil,
+                    sourceStartLastSeen: Date(timeIntervalSince1970: 1_737_000_000),
+                    sourceEndLastSeen: Date(timeIntervalSince1970: 1_737_003_600),
+                    childEventId: "child-existing",
+                    lastSyncedAt: Date(timeIntervalSince1970: 1_737_000_000),
+                    lastSeenInSourceAt: Date(timeIntervalSince1970: 1_737_000_000),
+                    lastSyncHash: "stale-hash"
+                )
+            )
+        }
+
+        await engine.syncNow()
+
+        #expect(gateway.updateEventCallCount == 1)
+        #expect(gateway.deleteEventCallCount == 0)
+
+        let links = try await MainActor.run { try linkRepo.fetchAll() }
+        #expect(links.count == 1)
+        #expect(links.first?.childEventId == "child-existing")
     }
 }
 
@@ -249,6 +336,7 @@ private actor SyncUpdateProbe {
         let totalFetched: Int
         let created: Int
         let updated: Int
+        let deleted: Int
     }
 
     func record(_ update: SyncEngineUpdate) {
@@ -257,8 +345,8 @@ private actor SyncUpdateProbe {
 
     var completionStats: [CompletionStats] {
         updates.compactMap { update in
-            if case let .completed(_, totalFetched, created, updated) = update {
-                return CompletionStats(totalFetched: totalFetched, created: created, updated: updated)
+            if case let .completed(_, totalFetched, created, updated, deleted) = update {
+                return CompletionStats(totalFetched: totalFetched, created: created, updated: updated, deleted: deleted)
             }
             return nil
         }

@@ -34,8 +34,10 @@ final class FakeEventKitGateway: EventKitGateway {
     private(set) var getEventCallCount = 0
     private(set) var createEventCallCount = 0
     private(set) var updateEventCallCount = 0
+    private(set) var deleteEventCallCount = 0
     private(set) var createEventCalls: [CreateEventCall] = []
     private(set) var updateEventCalls: [UpdateEventCall] = []
+    private(set) var deletedEventIds: [String] = []
 
     func requestAccess() async throws {
         if let requestAccessError {
@@ -89,9 +91,11 @@ final class FakeEventKitGateway: EventKitGateway {
     }
 
     func deleteEvent(eventId: String) throws {
+        deleteEventCallCount += 1
         if let deleteEventError {
             throw deleteEventError
         }
+        deletedEventIds.append(eventId)
         eventsById[eventId] = nil
     }
 

@@ -29,7 +29,7 @@ nonisolated struct ContinuousSyncEngineClock: SyncEngineClock {
 
 nonisolated enum SyncEngineUpdate: Equatable, Sendable {
     case syncing
-    case completed(lastSyncAt: Date, totalFetched: Int, created: Int, updated: Int)
+    case completed(lastSyncAt: Date, totalFetched: Int, created: Int, updated: Int, deleted: Int)
     case failed(message: String)
 }
 
@@ -52,12 +52,22 @@ actor SyncEngine {
         let totalFetched: Int
         let created: Int
         let updated: Int
+        let deleted: Int
     }
 
     private struct LinkState: Sendable {
         let id: UUID?
+        let sourceEventId: String?
+        let sourceCalendarItemId: String?
+        let sourceOccurrenceDate: Date?
+        let sourceStartLastSeen: Date?
         let childEventId: String?
         let lastSyncHash: String?
+    }
+
+    private struct EventProcessResult {
+        let created: Int
+        let updated: Int
     }
 
     typealias SyncWork = @Sendable (Set<SyncReason>) async throws -> SyncResult
@@ -208,7 +218,8 @@ actor SyncEngine {
                             lastSyncAt: finishedAt,
                             totalFetched: result.totalFetched,
                             created: result.created,
-                            updated: result.updated
+                            updated: result.updated,
+                            deleted: result.deleted
                         )
                     )
                 }
@@ -252,82 +263,76 @@ actor SyncEngine {
         }
 
         let lastSeenInSourceAt = dateProvider()
+        let sourceEventsByFallback = buildSourceEventsByFallbackKey(sourceEvents)
+
         var createdCount = 0
         var updatedCount = 0
+        var deletedCount = 0
         var matchedCount = 0
         var unmatchedCount = 0
 
         for sourceEvent in sourceEvents {
-            let mirrorPayload = Self.makeMirrorPayload(from: sourceEvent)
-            let payloadHash = Self.hashKeyFields(for: mirrorPayload)
+            let existingLink = try await findLinkState(for: sourceEvent)
+            let result = try await processSourceEvent(
+                sourceEvent,
+                existing: existingLink,
+                sourceCalendarId: sourceCalendarId,
+                childCalendarId: childCalendarId,
+                lastSeenInSourceAt: lastSeenInSourceAt
+            )
 
-            let linkState: LinkState? = try await MainActor.run { [linkRepo] in
-                guard let link = try linkRepo.findLink(for: sourceEvent) else {
-                    return Optional<LinkState>.none
-                }
-                return LinkState(
-                    id: link.id,
-                    childEventId: link.childEventId,
-                    lastSyncHash: link.lastSyncHash
-                )
-            }
-
-            if let linkState {
-                matchedCount += 1
-
-                var nextChildEventId = linkState.childEventId ?? ""
-                let childEvent: EventInfo? = try await performGatewayOperation(context: "getEvent") {
-                    if nextChildEventId.isEmpty {
-                        return Optional<EventInfo>.none
-                    }
-                    return try gateway.getEvent(byId: nextChildEventId)
-                }
-
-                if childEvent == nil {
-                    nextChildEventId = try await performGatewayOperation(context: "createEvent") {
-                        try gateway.createEvent(in: childCalendarId, payload: mirrorPayload)
-                    }
-                    createdCount += 1
-                } else if (linkState.lastSyncHash ?? "") != payloadHash {
-                    try await performGatewayOperation(context: "updateEvent") {
-                        try gateway.updateEvent(eventId: nextChildEventId, payload: mirrorPayload)
-                    }
-                    updatedCount += 1
-                }
-
-                try await upsertLink(
-                    existing: linkState,
-                    sourceCalendarId: sourceCalendarId,
-                    childCalendarId: childCalendarId,
-                    sourceEvent: sourceEvent,
-                    childEventId: nextChildEventId,
-                    lastSeenInSourceAt: lastSeenInSourceAt,
-                    lastSyncHash: payloadHash
-                )
-            } else {
+            createdCount += result.created
+            updatedCount += result.updated
+            if existingLink == nil {
                 unmatchedCount += 1
-
-                let childEventId = try await performGatewayOperation(context: "createEvent") {
-                    try gateway.createEvent(in: childCalendarId, payload: mirrorPayload)
-                }
-                createdCount += 1
-
-                try await upsertLink(
-                    existing: nil,
-                    sourceCalendarId: sourceCalendarId,
-                    childCalendarId: childCalendarId,
-                    sourceEvent: sourceEvent,
-                    childEventId: childEventId,
-                    lastSeenInSourceAt: lastSeenInSourceAt,
-                    lastSyncHash: payloadHash
-                )
+            } else {
+                matchedCount += 1
             }
         }
 
+        let allLinks = try await fetchAllLinkStates()
+        for link in allLinks {
+            let sourceById = try await fetchSourceEventByIdentifier(link.sourceEventId)
+            if let sourceById {
+                let result = try await processSourceEvent(
+                    sourceById,
+                    existing: link,
+                    sourceCalendarId: sourceCalendarId,
+                    childCalendarId: childCalendarId,
+                    lastSeenInSourceAt: lastSeenInSourceAt
+                )
+                createdCount += result.created
+                updatedCount += result.updated
+                continue
+            }
+
+            let fallbackEvent = sourceEventByFallback(link: link, sourceEventsByFallback: sourceEventsByFallback)
+            if let fallbackEvent {
+                let result = try await processSourceEvent(
+                    fallbackEvent,
+                    existing: link,
+                    sourceCalendarId: sourceCalendarId,
+                    childCalendarId: childCalendarId,
+                    lastSeenInSourceAt: lastSeenInSourceAt
+                )
+                createdCount += result.created
+                updatedCount += result.updated
+                continue
+            }
+
+            try await deleteLinkAndChildEventIfNeeded(link)
+            deletedCount += 1
+        }
+
         logger.info(
-            "Fetched source events=\(sourceEvents.count, privacy: .public), matched=\(matchedCount, privacy: .public), unmatched=\(unmatchedCount, privacy: .public), created=\(createdCount, privacy: .public), updated=\(updatedCount, privacy: .public)"
+            "Fetched source events=\(sourceEvents.count, privacy: .public), matched=\(matchedCount, privacy: .public), unmatched=\(unmatchedCount, privacy: .public), created=\(createdCount, privacy: .public), updated=\(updatedCount, privacy: .public), deleted=\(deletedCount, privacy: .public)"
         )
-        return SyncResult(totalFetched: sourceEvents.count, created: createdCount, updated: updatedCount)
+        return SyncResult(
+            totalFetched: sourceEvents.count,
+            created: createdCount,
+            updated: updatedCount,
+            deleted: deletedCount
+        )
     }
 
     private func syncErrorMessage(for error: Error) -> String {
@@ -335,6 +340,143 @@ actor SyncEngine {
             return message
         }
         return error.localizedDescription
+    }
+
+    private func processSourceEvent(
+        _ sourceEvent: EventInfo,
+        existing: LinkState?,
+        sourceCalendarId: String,
+        childCalendarId: String,
+        lastSeenInSourceAt: Date
+    ) async throws -> EventProcessResult {
+        let mirrorPayload = Self.makeMirrorPayload(from: sourceEvent)
+        let payloadHash = Self.hashKeyFields(for: mirrorPayload)
+
+        var nextChildEventId = existing?.childEventId ?? ""
+        var created = 0
+        var updated = 0
+
+        let childEvent: EventInfo? = try await performGatewayOperation(context: "getChildEvent") {
+            if nextChildEventId.isEmpty {
+                return Optional<EventInfo>.none
+            }
+            return try gateway.getEvent(byId: nextChildEventId)
+        }
+
+        if childEvent == nil {
+            nextChildEventId = try await performGatewayOperation(context: "createEvent") {
+                try gateway.createEvent(in: childCalendarId, payload: mirrorPayload)
+            }
+            created += 1
+        } else if (existing?.lastSyncHash ?? "") != payloadHash {
+            try await performGatewayOperation(context: "updateEvent") {
+                try gateway.updateEvent(eventId: nextChildEventId, payload: mirrorPayload)
+            }
+            updated += 1
+        }
+
+        try await upsertLink(
+            existing: existing,
+            sourceCalendarId: sourceCalendarId,
+            childCalendarId: childCalendarId,
+            sourceEvent: sourceEvent,
+            childEventId: nextChildEventId,
+            lastSeenInSourceAt: lastSeenInSourceAt,
+            lastSyncHash: payloadHash
+        )
+
+        return EventProcessResult(created: created, updated: updated)
+    }
+
+    private func findLinkState(for sourceEvent: EventInfo) async throws -> LinkState? {
+        try await MainActor.run { [linkRepo] in
+            guard let link = try linkRepo.findLink(for: sourceEvent) else {
+                return Optional<LinkState>.none
+            }
+            return LinkState(
+                id: link.id,
+                sourceEventId: link.sourceEventId,
+                sourceCalendarItemId: link.sourceCalendarItemId,
+                sourceOccurrenceDate: link.sourceOccurrenceDate,
+                sourceStartLastSeen: link.sourceStartLastSeen,
+                childEventId: link.childEventId,
+                lastSyncHash: link.lastSyncHash
+            )
+        }
+    }
+
+    private func fetchAllLinkStates() async throws -> [LinkState] {
+        try await MainActor.run { [linkRepo] in
+            let links = try linkRepo.fetchAll()
+            return links.map { link in
+                LinkState(
+                    id: link.id,
+                    sourceEventId: link.sourceEventId,
+                    sourceCalendarItemId: link.sourceCalendarItemId,
+                    sourceOccurrenceDate: link.sourceOccurrenceDate,
+                    sourceStartLastSeen: link.sourceStartLastSeen,
+                    childEventId: link.childEventId,
+                    lastSyncHash: link.lastSyncHash
+                )
+            }
+        }
+    }
+
+    private func fetchSourceEventByIdentifier(_ sourceEventId: String?) async throws -> EventInfo? {
+        guard let sourceEventId, !sourceEventId.isEmpty else {
+            return nil
+        }
+        return try await performGatewayOperation(context: "getSourceEvent") {
+            try gateway.getEvent(byId: sourceEventId)
+        }
+    }
+
+    private func buildSourceEventsByFallbackKey(_ sourceEvents: [EventInfo]) -> [SourceFallbackKey: EventInfo] {
+        var byFallback: [SourceFallbackKey: EventInfo] = [:]
+        for sourceEvent in sourceEvents {
+            guard let sourceCalendarItemId = sourceEvent.calendarItemId else {
+                continue
+            }
+            let fallback = SourceFallbackKey(
+                sourceCalendarItemId: sourceCalendarItemId,
+                sourceDate: sourceEvent.occurrenceDate ?? sourceEvent.startDate
+            )
+            byFallback[fallback] = sourceEvent
+        }
+        return byFallback
+    }
+
+    private func sourceEventByFallback(
+        link: LinkState,
+        sourceEventsByFallback: [SourceFallbackKey: EventInfo]
+    ) -> EventInfo? {
+        guard
+            let sourceCalendarItemId = link.sourceCalendarItemId,
+            let sourceDate = link.sourceOccurrenceDate ?? link.sourceStartLastSeen
+        else {
+            return nil
+        }
+
+        let fallbackKey = SourceFallbackKey(
+            sourceCalendarItemId: sourceCalendarItemId,
+            sourceDate: sourceDate
+        )
+        return sourceEventsByFallback[fallbackKey]
+    }
+
+    private func deleteLinkAndChildEventIfNeeded(_ link: LinkState) async throws {
+        if let childEventId = link.childEventId, !childEventId.isEmpty {
+            try await performGatewayOperation(context: "deleteEvent") {
+                try gateway.deleteEvent(eventId: childEventId)
+            }
+        }
+
+        try await MainActor.run { [linkRepo] in
+            guard let linkId = link.id else {
+                return
+            }
+            try linkRepo.delete(id: linkId)
+        }
     }
 
     private func performGatewayOperation<T>(
