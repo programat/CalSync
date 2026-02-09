@@ -39,6 +39,18 @@ final class FakeEventKitGateway: EventKitGateway {
     private(set) var updateEventCalls: [UpdateEventCall] = []
     private(set) var deletedEventIds: [String] = []
 
+    func configureRecurringScenario(
+        seriesEventId: String = "series-event-id",
+        seriesCalendarItemId: String = "series-calendar-item-id",
+        startDate: Date = Date(timeIntervalSince1970: 1_737_000_000)
+    ) {
+        fetchEventsToReturn = Self.makeRecurringOccurrences(
+            seriesEventId: seriesEventId,
+            seriesCalendarItemId: seriesCalendarItemId,
+            startDate: startDate
+        )
+    }
+
     func requestAccess() async throws {
         if let requestAccessError {
             throw requestAccessError
@@ -101,5 +113,33 @@ final class FakeEventKitGateway: EventKitGateway {
 
     func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject {
         NSObject()
+    }
+
+    private static func makeRecurringOccurrences(
+        seriesEventId: String,
+        seriesCalendarItemId: String,
+        startDate: Date
+    ) -> [EventInfo] {
+        let day: TimeInterval = 24 * 60 * 60
+        return (0..<3).map { index in
+            let occurrenceDate = startDate.addingTimeInterval(day * Double(index))
+            return EventInfo(
+                eventId: seriesEventId,
+                calendarItemId: seriesCalendarItemId,
+                occurrenceDate: occurrenceDate,
+                title: "Recurring \(index + 1)",
+                notes: "Occurrence \(index + 1)",
+                location: "Room \(index + 1)",
+                structuredLocation: nil,
+                startDate: occurrenceDate,
+                endDate: occurrenceDate.addingTimeInterval(3600),
+                isAllDay: false,
+                timeZone: TimeZone(secondsFromGMT: 0),
+                availability: .busy,
+                status: .confirmed,
+                alarms: [],
+                url: URL(string: "https://example.com/recurring/\(index + 1)")
+            )
+        }
     }
 }

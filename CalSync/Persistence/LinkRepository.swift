@@ -13,8 +13,6 @@ nonisolated struct SourceEventKey {
     let fallback: SourceFallbackKey?
 
     init(sourceEvent: EventInfo) {
-        primary = sourceEvent.eventId
-
         if let calendarItemId = sourceEvent.calendarItemId {
             fallback = SourceFallbackKey(
                 sourceCalendarItemId: calendarItemId,
@@ -22,6 +20,12 @@ nonisolated struct SourceEventKey {
             )
         } else {
             fallback = nil
+        }
+
+        if sourceEvent.occurrenceDate != nil {
+            primary = nil
+        } else {
+            primary = sourceEvent.eventId
         }
     }
 }

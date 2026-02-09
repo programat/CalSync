@@ -311,6 +311,34 @@ struct SyncEngineTests {
         #expect(links.count == 1)
         #expect(links.first?.childEventId == "child-existing")
     }
+
+    @Test func recurringOccurrencesCreateSeparateSingleChildEvents() async throws {
+        let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.configureRecurringScenario()
+
+        await engine.syncNow()
+
+        #expect(gateway.createEventCallCount == 3)
+        #expect(gateway.updateEventCallCount == 0)
+        #expect(gateway.deleteEventCallCount == 0)
+
+        let occurrenceDatesInLinks = try await MainActor.run {
+            try linkRepo.fetchAll().compactMap(\.sourceOccurrenceDate)
+        }
+        #expect(occurrenceDatesInLinks.count == 3)
+        #expect(Set(occurrenceDatesInLinks).count == 3)
+
+        let createdPayloads = await MainActor.run {
+            gateway.createEventCalls.map(\.payload)
+        }
+        #expect(createdPayloads.count == 3)
+        #expect(createdPayloads.allSatisfy { $0.occurrenceDate == nil })
+        #expect(createdPayloads.allSatisfy { $0.calendarItemId == nil })
+    }
 }
 
 private actor SyncRunProbe {
