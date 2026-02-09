@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import CoreData
+import os
 
 @MainActor
 final class AppViewModel: ObservableObject {
@@ -57,6 +58,7 @@ final class AppViewModel: ObservableObject {
     private var syncEngine: SyncEngine?
     private var didStart = false
     private var isValidatingCalendars = false
+    private let logger = Logger(subsystem: "CalSync", category: "AppViewModel")
 
     init(
         eventKitGateway: EventKitGateway? = nil,
@@ -127,12 +129,15 @@ final class AppViewModel: ObservableObject {
         do {
             let calendars = try eventKitGateway.fetchCalendars()
             self.calendars = calendars
-            validateSelectedCalendars()
-            status = .idle
+            let isValid = validateSelectedCalendars()
+            if isValid {
+                status = .idle
+            }
         } catch {
             let message = "Не удалось загрузить календари: \(error.localizedDescription)"
             status = .error(message)
             errors.append(message)
+            logger.error("Failed to load calendars: \(message, privacy: .public)")
         }
     }
 
@@ -179,18 +184,24 @@ final class AppViewModel: ObservableObject {
         return date.formatted(date: .abbreviated, time: .standard)
     }
 
-    private func validateSelectedCalendars() {
-        guard !isValidatingCalendars else { return }
+    @discardableResult
+    private func validateSelectedCalendars() -> Bool {
+        guard !isValidatingCalendars else { return true }
         isValidatingCalendars = true
         defer { isValidatingCalendars = false }
 
         let calendarIds = Set(calendars.map(\.id))
+        var isValid = true
 
         if let sourceCalendarId, !calendarIds.contains(sourceCalendarId) {
             self.sourceCalendarId = nil
+            setValidationError("Выбранный Source календарь недоступен.")
+            isValid = false
         }
         if let childCalendarId, !calendarIds.contains(childCalendarId) {
             self.childCalendarId = nil
+            setValidationError("Выбранный Child календарь недоступен.")
+            isValid = false
         }
         if
             let childCalendarId,
@@ -198,12 +209,23 @@ final class AppViewModel: ObservableObject {
             !childCalendar.isWritable
         {
             self.childCalendarId = nil
-            errors.append("Выбранный Child календарь недоступен для записи.")
+            setValidationError("Выбранный Child календарь недоступен для записи.")
+            isValid = false
         }
         if let sourceCalendarId, let childCalendarId, sourceCalendarId == childCalendarId {
             self.childCalendarId = nil
-            errors.append("Source и Child не могут быть одинаковыми.")
+            setValidationError("Source и Child не могут быть одинаковыми.")
+            isValid = false
         }
+        return isValid
+    }
+
+    private func setValidationError(_ message: String) {
+        status = .error(message)
+        if errors.last != message {
+            errors.append(message)
+        }
+        logger.error("Calendar validation failed: \(message, privacy: .public)")
     }
 
     private func accessErrorMessage(for error: Error) -> String {

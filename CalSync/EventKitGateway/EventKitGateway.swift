@@ -18,9 +18,22 @@ nonisolated protocol EventKitGateway {
     func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject
 }
 
-nonisolated enum EventKitGatewayError: Error, Equatable {
+nonisolated enum EventKitGatewayError: Error, Equatable, LocalizedError {
     case accessDenied
     case calendarNotFound
     case eventNotFound
     case missingEventIdentifier
+
+    var errorDescription: String? {
+        switch self {
+        case .accessDenied:
+            return "Нет доступа к календарям."
+        case .calendarNotFound:
+            return "Выбранный календарь недоступен."
+        case .eventNotFound:
+            return "Событие не найдено."
+        case .missingEventIdentifier:
+            return "Не удалось получить идентификатор события."
+        }
+    }
 }

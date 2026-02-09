@@ -35,11 +35,20 @@ nonisolated enum SyncEngineUpdate: Equatable, Sendable {
 
 nonisolated enum SyncEngineError: LocalizedError {
     case calendarsNotSelected
+    case sourceCalendarUnavailable
+    case childCalendarUnavailable
+    case childCalendarReadOnly
 
     var errorDescription: String? {
         switch self {
         case .calendarsNotSelected:
             return "Source и Child календари должны быть выбраны."
+        case .sourceCalendarUnavailable:
+            return "Выбранный Source календарь недоступен."
+        case .childCalendarUnavailable:
+            return "Выбранный Child календарь недоступен."
+        case .childCalendarReadOnly:
+            return "Выбранный Child календарь недоступен для записи."
         }
     }
 }
@@ -262,7 +271,19 @@ actor SyncEngine {
         else {
             throw SyncEngineError.calendarsNotSelected
         }
-        _ = childCalendarId
+
+        let calendars = try await performGatewayOperation(context: "fetchCalendars") {
+            try gateway.fetchCalendars()
+        }
+        guard calendars.contains(where: { $0.id == sourceCalendarId }) else {
+            throw SyncEngineError.sourceCalendarUnavailable
+        }
+        guard let childCalendar = calendars.first(where: { $0.id == childCalendarId }) else {
+            throw SyncEngineError.childCalendarUnavailable
+        }
+        guard childCalendar.isWritable else {
+            throw SyncEngineError.childCalendarReadOnly
+        }
 
         let window = Self.computeWindow(
             now: dateProvider(),
@@ -352,6 +373,10 @@ actor SyncEngine {
     }
 
     private func syncErrorMessage(for error: Error) -> String {
+        if let gatewayError = error as? EventKitGatewayError, let message = gatewayError.errorDescription {
+            return message
+        }
+
         if let localizedError = error as? LocalizedError, let message = localizedError.errorDescription {
             return message
         }

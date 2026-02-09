@@ -87,6 +87,24 @@ struct CalSyncTests {
         #expect(await viewModel.errors.last == "Source и Child не могут быть одинаковыми.")
     }
 
+    @Test func sourceCalendarDisappearedClearsSelectionAndSetsError() async throws {
+        let viewModel = await AppViewModel()
+        await MainActor.run {
+            viewModel.calendars = [
+                CalendarInfo(id: "source-id", title: "Source", sourceTitle: "iCloud", isWritable: true),
+                CalendarInfo(id: "child-id", title: "Child", sourceTitle: "iCloud", isWritable: true),
+            ]
+            viewModel.sourceCalendarId = "source-id"
+            viewModel.childCalendarId = "child-id"
+            viewModel.calendars = [
+                CalendarInfo(id: "child-id", title: "Child", sourceTitle: "iCloud", isWritable: true),
+            ]
+        }
+
+        #expect(await viewModel.sourceCalendarId == nil)
+        #expect(await viewModel.status == .error("Выбранный Source календарь недоступен."))
+    }
+
     @Test func appViewModelInitReadsSettingsFromStore() async throws {
         let (store, userDefaults, suiteName) = makeSettingsStore()
         defer { userDefaults.removePersistentDomain(forName: suiteName) }

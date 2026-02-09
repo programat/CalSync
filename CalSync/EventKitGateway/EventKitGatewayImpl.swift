@@ -18,7 +18,7 @@ final class EventKitGatewayImpl: EventKitGateway {
 
     func requestAccess() async throws {
         let status = EKEventStore.authorizationStatus(for: .event)
-        if status == .authorized || status == .fullAccess {
+        if status == .fullAccess {
             return
         }
 
@@ -29,7 +29,8 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func fetchCalendars() throws -> [CalendarInfo] {
-        eventStore.calendars(for: .event).map { calendar in
+        try ensureAccessGranted()
+        return eventStore.calendars(for: .event).map { calendar in
             CalendarInfo(
                 id: calendar.calendarIdentifier,
                 title: calendar.title,
@@ -40,6 +41,7 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func fetchEvents(calendarId: String, from: Date, to: Date) throws -> [EventInfo] {
+        try ensureAccessGranted()
         guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
             throw EventKitGatewayError.calendarNotFound
         }
@@ -50,6 +52,7 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func getEvent(byId: String) throws -> EventInfo? {
+        try ensureAccessGranted()
         guard let event = eventStore.event(withIdentifier: byId) else {
             return nil
         }
@@ -57,6 +60,7 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func createEvent(in calendarId: String, payload: EventInfo) throws -> String {
+        try ensureAccessGranted()
         guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
             throw EventKitGatewayError.calendarNotFound
         }
@@ -75,6 +79,7 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func updateEvent(eventId: String, payload: EventInfo) throws {
+        try ensureAccessGranted()
         guard let event = eventStore.event(withIdentifier: eventId) else {
             throw EventKitGatewayError.eventNotFound
         }
@@ -84,6 +89,7 @@ final class EventKitGatewayImpl: EventKitGateway {
     }
 
     func deleteEvent(eventId: String) throws {
+        try ensureAccessGranted()
         guard let event = eventStore.event(withIdentifier: eventId) else {
             return
         }
@@ -102,6 +108,13 @@ final class EventKitGatewayImpl: EventKitGateway {
 }
 
 private extension EventKitGatewayImpl {
+    func ensureAccessGranted() throws {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if status != .fullAccess {
+            throw EventKitGatewayError.accessDenied
+        }
+    }
+
     func makeEventInfo(from event: EKEvent) -> EventInfo {
         EventInfo(
             eventId: event.eventIdentifier,

@@ -10,6 +10,7 @@ import Foundation
 
 final class ErrorRepository {
     private let context: NSManagedObjectContext
+    private let maxStoredErrors = 20
 
     init(context: NSManagedObjectContext) {
         self.context = context
@@ -29,6 +30,7 @@ final class ErrorRepository {
             error.message = message
             error.context = errorContext
             try saveIfNeeded()
+            try trimExcessErrorsIfNeeded(limit: maxStoredErrors)
             return error
         }
     }
@@ -44,17 +46,7 @@ final class ErrorRepository {
 
     func trimTo(limit: Int) throws {
         try context.performAndWait {
-            let request = SyncError.fetchRequest()
-            request.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
-            let allErrors = try context.fetch(request)
-
-            if limit <= 0 {
-                allErrors.forEach(context.delete)
-            } else if allErrors.count > limit {
-                allErrors.dropFirst(limit).forEach(context.delete)
-            }
-
-            try saveIfNeeded()
+            try trimExcessErrorsIfNeeded(limit: limit)
         }
     }
 
@@ -71,5 +63,19 @@ final class ErrorRepository {
         if context.hasChanges {
             try context.save()
         }
+    }
+
+    private func trimExcessErrorsIfNeeded(limit: Int) throws {
+        let request = SyncError.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
+        let allErrors = try context.fetch(request)
+
+        if limit <= 0 {
+            allErrors.forEach(context.delete)
+        } else if allErrors.count > limit {
+            allErrors.dropFirst(limit).forEach(context.delete)
+        }
+
+        try saveIfNeeded()
     }
 }

@@ -22,6 +22,8 @@ struct PersistenceController {
         let storeDescription = container.persistentStoreDescriptions.first ?? NSPersistentStoreDescription()
         storeDescription.shouldMigrateStoreAutomatically = true
         storeDescription.shouldInferMappingModelAutomatically = true
+        storeDescription.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
+        storeDescription.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
 
         if inMemory {
             storeDescription.type = NSInMemoryStoreType

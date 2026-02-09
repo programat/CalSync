@@ -94,6 +94,56 @@ struct SyncEngineTests {
         #expect(gateway.fetchEventsCallCount == 0)
     }
 
+    @Test func syncNowFailsWhenAccessIsRevokedAndSkipsFetchEvents() async throws {
+        let updateProbe = SyncUpdateProbe()
+        let (engine, gateway, _, _, settings, userDefaults, suiteName) = makeSyncEngine(
+            onUpdate: { update in
+                await updateProbe.record(update)
+            }
+        )
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.fetchCalendarsError = EventKitGatewayError.accessDenied
+
+        await engine.syncNow()
+
+        let updates = await updateProbe.updates
+        #expect(updates.contains(.syncing))
+        let hasAccessError = updates.contains {
+            if case let .failed(message) = $0 {
+                return message.contains("Нет доступа к календарям")
+            }
+            return false
+        }
+        #expect(hasAccessError)
+        #expect(gateway.fetchEventsCallCount == 0)
+    }
+
+    @Test func syncNowFailsWhenSelectedSourceCalendarDisappeared() async throws {
+        let updateProbe = SyncUpdateProbe()
+        let (engine, gateway, _, _, settings, userDefaults, suiteName) = makeSyncEngine(
+            onUpdate: { update in
+                await updateProbe.record(update)
+            }
+        )
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.calendarsToReturn = [
+            CalendarInfo(id: "child-calendar", title: "Child", sourceTitle: "iCloud", isWritable: true)
+        ]
+
+        await engine.syncNow()
+
+        let updates = await updateProbe.updates
+        #expect(updates.contains(.syncing))
+        #expect(updates.contains(.failed(message: "Выбранный Source календарь недоступен.")))
+        #expect(gateway.fetchEventsCallCount == 0)
+    }
+
     @Test func createNewMirrorWhenLinkMissing() async throws {
         let updateProbe = SyncUpdateProbe()
         let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine(
@@ -439,6 +489,10 @@ private func makeSyncEngine(
     let linkRepo = LinkRepository(context: context)
     let errorRepo = ErrorRepository(context: context)
     let gateway = FakeEventKitGateway()
+    gateway.calendarsToReturn = [
+        CalendarInfo(id: "source-calendar", title: "Source", sourceTitle: "iCloud", isWritable: true),
+        CalendarInfo(id: "child-calendar", title: "Child", sourceTitle: "iCloud", isWritable: true),
+    ]
 
     let suiteName = "CalSyncTests.SyncEngine.\(UUID().uuidString)"
     guard let userDefaults = UserDefaults(suiteName: suiteName) else {
