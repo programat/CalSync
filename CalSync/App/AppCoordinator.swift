@@ -27,4 +27,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             await windowCoordinator.onAppStart()
         }
     }
+
+    @MainActor
+    func syncNowFromStatusBar() {
+        windowCoordinator.syncNow()
+    }
+
+    @MainActor
+    func resetSyncFromStatusBar() {
+        windowCoordinator.resetSync()
+    }
 }

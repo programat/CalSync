@@ -339,6 +339,54 @@ struct SyncEngineTests {
         #expect(createdPayloads.allSatisfy { $0.occurrenceDate == nil })
         #expect(createdPayloads.allSatisfy { $0.calendarItemId == nil })
     }
+
+    @Test func resetSyncDeletesManagedChildEventsAndClearsLinks() async throws {
+        let (engine, gateway, linkRepo, _, _, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        try await MainActor.run {
+            _ = try linkRepo.create(
+                SyncedEventLinkPayload(
+                    id: UUID(),
+                    sourceCalendarId: "source-calendar",
+                    childCalendarId: "child-calendar",
+                    sourceEventId: "source-1",
+                    sourceCalendarItemId: "item-1",
+                    sourceOccurrenceDate: nil,
+                    sourceStartLastSeen: Date(timeIntervalSince1970: 1_737_000_000),
+                    sourceEndLastSeen: Date(timeIntervalSince1970: 1_737_003_600),
+                    childEventId: "child-a",
+                    lastSyncedAt: Date(timeIntervalSince1970: 1_737_000_000),
+                    lastSeenInSourceAt: Date(timeIntervalSince1970: 1_737_000_000),
+                    lastSyncHash: "hash-a"
+                )
+            )
+            _ = try linkRepo.create(
+                SyncedEventLinkPayload(
+                    id: UUID(),
+                    sourceCalendarId: "source-calendar",
+                    childCalendarId: "child-calendar",
+                    sourceEventId: "source-2",
+                    sourceCalendarItemId: "item-2",
+                    sourceOccurrenceDate: nil,
+                    sourceStartLastSeen: Date(timeIntervalSince1970: 1_737_010_000),
+                    sourceEndLastSeen: Date(timeIntervalSince1970: 1_737_013_600),
+                    childEventId: "child-b",
+                    lastSyncedAt: Date(timeIntervalSince1970: 1_737_010_000),
+                    lastSeenInSourceAt: Date(timeIntervalSince1970: 1_737_010_000),
+                    lastSyncHash: "hash-b"
+                )
+            )
+        }
+
+        await engine.resetSync()
+
+        #expect(gateway.deleteEventCallCount == 2)
+        #expect(Set(gateway.deletedEventIds) == Set(["child-a", "child-b"]))
+
+        let links = try await MainActor.run { try linkRepo.fetchAll() }
+        #expect(links.isEmpty)
+    }
 }
 
 private actor SyncRunProbe {

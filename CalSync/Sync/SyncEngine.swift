@@ -146,10 +146,26 @@ actor SyncEngine {
 
     func resetSync() async {
         do {
+            let links = try await fetchAllLinkStates()
+            for link in links {
+                guard let childEventId = link.childEventId, !childEventId.isEmpty else {
+                    continue
+                }
+                do {
+                    try gateway.deleteEvent(eventId: childEventId)
+                } catch let gatewayError as EventKitGatewayError where gatewayError == .eventNotFound {
+                    continue
+                }
+            }
+
             try await MainActor.run {
                 try linkRepo.deleteAll()
                 try errorRepo.deleteAll()
             }
+            pendingReasons.removeAll()
+            needResync = false
+            debounceTask?.cancel()
+            debounceTask = nil
             logger.info("Reset sync: cleared links and errors.")
         } catch {
             logger.error("Reset sync failed: \(error.localizedDescription, privacy: .public)")

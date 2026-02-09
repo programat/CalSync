@@ -78,11 +78,17 @@ final class StatusBarController {
     }
 
     @objc private func syncNow() {
-        logger.info("Sync now triggered (stub)")
+        Task { @MainActor in
+            appCoordinator?.syncNowFromStatusBar()
+        }
+        logger.info("Sync now triggered.")
     }
 
     @objc private func resetSync() {
-        logger.info("Reset sync triggered (stub)")
+        Task { @MainActor in
+            appCoordinator?.resetSyncFromStatusBar()
+        }
+        logger.info("Reset sync triggered.")
     }
 
     @objc private func quitApp() {

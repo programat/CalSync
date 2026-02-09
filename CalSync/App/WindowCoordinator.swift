@@ -23,6 +23,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func syncNow() {
+        viewModel.syncNow()
+    }
+
+    func resetSync() {
+        viewModel.resetSync()
+    }
+
     func windowWillClose(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
     }

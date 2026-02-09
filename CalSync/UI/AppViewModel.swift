@@ -146,10 +146,13 @@ final class AppViewModel: ObservableObject {
         Task {
             await syncEngine?.resetSync()
             await MainActor.run {
+                status = .idle
+                lastSyncAt = nil
                 totalFetchedCount = 0
                 createdCount = 0
                 updatedCount = 0
                 deletedCount = 0
+                errors.removeAll()
             }
         }
     }
