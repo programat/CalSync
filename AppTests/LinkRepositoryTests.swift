@@ -154,11 +154,118 @@ struct LinkRepositoryTests {
             eventId: "series-event-id",
             calendarItemId: "series-item-id",
             occurrenceDate: secondOccurrence,
+            isRecurring: true,
             startDate: secondOccurrence
         )
 
         let matched = try repository.findLink(for: secondOccurrenceEvent)
         #expect(matched?.id != firstLink.id)
+        #expect(matched?.childEventId == "child-2")
+    }
+
+    @Test func recurringWithoutOccurrenceDateMatchesByStartDateFallback() throws {
+        let persistence = PersistenceController(inMemory: true)
+        let repository = LinkRepository(context: persistence.container.viewContext)
+
+        let firstStart = Date(timeIntervalSince1970: 1_737_000_000)
+        let secondStart = firstStart.addingTimeInterval(24 * 60 * 60)
+
+        _ = try repository.create(
+            SyncedEventLinkPayload(
+                id: UUID(),
+                sourceCalendarId: "source-calendar",
+                childCalendarId: "child-calendar",
+                sourceEventId: "series-event-id",
+                sourceCalendarItemId: "series-item-id",
+                sourceOccurrenceDate: nil,
+                sourceStartLastSeen: firstStart,
+                sourceEndLastSeen: firstStart.addingTimeInterval(3_600),
+                childEventId: "child-1",
+                lastSyncedAt: firstStart,
+                lastSeenInSourceAt: firstStart,
+                lastSyncHash: "hash-1"
+            )
+        )
+        let secondLink = try repository.create(
+            SyncedEventLinkPayload(
+                id: UUID(),
+                sourceCalendarId: "source-calendar",
+                childCalendarId: "child-calendar",
+                sourceEventId: "series-event-id",
+                sourceCalendarItemId: "series-item-id",
+                sourceOccurrenceDate: nil,
+                sourceStartLastSeen: secondStart,
+                sourceEndLastSeen: secondStart.addingTimeInterval(3_600),
+                childEventId: "child-2",
+                lastSyncedAt: secondStart,
+                lastSeenInSourceAt: secondStart,
+                lastSyncHash: "hash-2"
+            )
+        )
+
+        let recurringEvent = makeEventInfo(
+            eventId: "series-event-id",
+            calendarItemId: "series-item-id",
+            occurrenceDate: nil,
+            isRecurring: true,
+            startDate: secondStart
+        )
+
+        let matched = try repository.findLink(for: recurringEvent)
+        #expect(matched?.id == secondLink.id)
+        #expect(matched?.childEventId == "child-2")
+    }
+
+    @Test func recurringOccurrenceDateMatchesFallbackEvenWhenRecurringFlagIsFalse() throws {
+        let persistence = PersistenceController(inMemory: true)
+        let repository = LinkRepository(context: persistence.container.viewContext)
+
+        let firstOccurrence = Date(timeIntervalSince1970: 1_737_000_000)
+        let secondOccurrence = firstOccurrence.addingTimeInterval(24 * 60 * 60)
+
+        _ = try repository.create(
+            SyncedEventLinkPayload(
+                id: UUID(),
+                sourceCalendarId: "source-calendar",
+                childCalendarId: "child-calendar",
+                sourceEventId: "series-event-id",
+                sourceCalendarItemId: "series-item-id",
+                sourceOccurrenceDate: firstOccurrence,
+                sourceStartLastSeen: firstOccurrence,
+                sourceEndLastSeen: firstOccurrence.addingTimeInterval(3_600),
+                childEventId: "child-1",
+                lastSyncedAt: firstOccurrence,
+                lastSeenInSourceAt: firstOccurrence,
+                lastSyncHash: "hash-1"
+            )
+        )
+        let secondLink = try repository.create(
+            SyncedEventLinkPayload(
+                id: UUID(),
+                sourceCalendarId: "source-calendar",
+                childCalendarId: "child-calendar",
+                sourceEventId: "series-event-id",
+                sourceCalendarItemId: "series-item-id",
+                sourceOccurrenceDate: secondOccurrence,
+                sourceStartLastSeen: secondOccurrence,
+                sourceEndLastSeen: secondOccurrence.addingTimeInterval(3_600),
+                childEventId: "child-2",
+                lastSyncedAt: secondOccurrence,
+                lastSeenInSourceAt: secondOccurrence,
+                lastSyncHash: "hash-2"
+            )
+        )
+
+        let recurringEvent = makeEventInfo(
+            eventId: "series-event-id",
+            calendarItemId: "series-item-id",
+            occurrenceDate: secondOccurrence,
+            isRecurring: false,
+            startDate: secondOccurrence
+        )
+
+        let matched = try repository.findLink(for: recurringEvent)
+        #expect(matched?.id == secondLink.id)
         #expect(matched?.childEventId == "child-2")
     }
 }
@@ -167,12 +274,14 @@ private func makeEventInfo(
     eventId: String?,
     calendarItemId: String?,
     occurrenceDate: Date?,
+    isRecurring: Bool = false,
     startDate: Date
 ) -> EventInfo {
     EventInfo(
         eventId: eventId,
         calendarItemId: calendarItemId,
         occurrenceDate: occurrenceDate,
+        isRecurring: isRecurring,
         title: "Title",
         notes: "Notes",
         location: "Location",

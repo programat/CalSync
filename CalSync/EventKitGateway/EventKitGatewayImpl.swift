@@ -120,6 +120,7 @@ private extension EventKitGatewayImpl {
             eventId: event.eventIdentifier,
             calendarItemId: event.calendarItemIdentifier,
             occurrenceDate: event.occurrenceDate,
+            isRecurring: event.hasRecurrenceRules || event.occurrenceDate != nil,
             title: event.title ?? "",
             notes: event.notes,
             location: event.location,
@@ -130,7 +131,8 @@ private extension EventKitGatewayImpl {
             timeZone: event.timeZone,
             availability: makeAvailability(from: event.availability),
             status: makeStatus(from: event.status),
-            alarms: (event.alarms ?? []).map { makeAlarmInfo(from: $0) },
+            // Alarm mirroring is disabled to avoid sandbox warnings for unsupported alarm types.
+            alarms: [],
             url: event.url
         )
     }
@@ -145,7 +147,7 @@ private extension EventKitGatewayImpl {
         event.isAllDay = payload.isAllDay
         event.timeZone = payload.timeZone
         event.availability = makeAvailability(from: payload.availability)
-        event.alarms = payload.alarms.isEmpty ? nil : payload.alarms.map { makeAlarm(from: $0) }
+        event.alarms = nil
         event.url = payload.url
         event.recurrenceRules = nil
     }
@@ -168,30 +170,6 @@ private extension EventKitGatewayImpl {
             location.radius = radius
         }
         return location
-    }
-
-    func makeAlarmInfo(from alarm: EKAlarm) -> AlarmInfo {
-        AlarmInfo(
-            absoluteDate: alarm.absoluteDate,
-            relativeOffset: alarm.absoluteDate == nil ? alarm.relativeOffset : nil,
-            structuredLocation: alarm.structuredLocation.map { makeStructuredLocationInfo(from: $0) },
-            proximity: makeAlarmProximity(from: alarm.proximity)
-        )
-    }
-
-    func makeAlarm(from info: AlarmInfo) -> EKAlarm {
-        let alarm: EKAlarm
-        if let absoluteDate = info.absoluteDate {
-            alarm = EKAlarm(absoluteDate: absoluteDate)
-        } else if let relativeOffset = info.relativeOffset {
-            alarm = EKAlarm(relativeOffset: relativeOffset)
-        } else {
-            alarm = EKAlarm(relativeOffset: 0)
-        }
-
-        alarm.structuredLocation = info.structuredLocation.map { makeStructuredLocation(from: $0) }
-        alarm.proximity = makeAlarmProximity(from: info.proximity)
-        return alarm
     }
 
     func makeAvailability(from availability: EKEventAvailability) -> EventAvailability {

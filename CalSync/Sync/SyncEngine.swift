@@ -89,6 +89,7 @@ actor SyncEngine {
     private let clock: any SyncEngineClock
     private let debounceDuration: Duration
     private let fallbackInterval: Duration
+    private let eventStoreChangeSuppressionInterval: TimeInterval
     private let calendar: Calendar
     private let onUpdate: UpdateHandler?
     private let syncWorkOverride: SyncWork?
@@ -100,6 +101,7 @@ actor SyncEngine {
     private var pendingReasons: Set<SyncReason> = []
     private var isSyncing = false
     private var needResync = false
+    private var suppressEventStoreChangesUntil: Date?
 
     init(
         gateway: EventKitGateway,
@@ -110,6 +112,7 @@ actor SyncEngine {
         clock: any SyncEngineClock = ContinuousSyncEngineClock(),
         debounceDuration: Duration = .seconds(2),
         fallbackInterval: Duration = .seconds(15 * 60),
+        eventStoreChangeSuppressionInterval: TimeInterval = 2,
         calendar: Calendar = .current,
         onUpdate: UpdateHandler? = nil,
         syncWorkOverride: SyncWork? = nil
@@ -122,6 +125,7 @@ actor SyncEngine {
         self.clock = clock
         self.debounceDuration = debounceDuration
         self.fallbackInterval = fallbackInterval
+        self.eventStoreChangeSuppressionInterval = eventStoreChangeSuppressionInterval
         self.calendar = calendar
         self.onUpdate = onUpdate
         self.syncWorkOverride = syncWorkOverride
@@ -175,6 +179,7 @@ actor SyncEngine {
             needResync = false
             debounceTask?.cancel()
             debounceTask = nil
+            suppressEventStoreChangesUntil = nil
             logger.info("Reset sync: cleared links and errors.")
         } catch {
             logger.error("Reset sync failed: \(error.localizedDescription, privacy: .public)")
@@ -187,7 +192,7 @@ actor SyncEngine {
         eventStoreObserver = gateway.observeStoreChanges { [weak self] in
             guard let self else { return }
             Task {
-                await self.requestSync(reason: .eventStoreChanged)
+                await self.handleEventStoreChanged()
             }
         }
     }
@@ -209,6 +214,16 @@ actor SyncEngine {
     private func flushDebouncedSyncRequest() async {
         debounceTask = nil
         await startSyncIfPossible()
+    }
+
+    private func handleEventStoreChanged() {
+        if isSyncing {
+            return
+        }
+        if let suppressUntil = suppressEventStoreChangesUntil, dateProvider() < suppressUntil {
+            return
+        }
+        requestSync(reason: .eventStoreChanged)
     }
 
     private func startSyncIfPossible() async {
@@ -236,6 +251,7 @@ actor SyncEngine {
                 logger.info("Sync started. reasons=\(String(describing: reasons), privacy: .public)")
                 let result = try await sync(reasons: reasons)
                 let finishedAt = dateProvider()
+                suppressEventStoreChangesUntil = finishedAt.addingTimeInterval(eventStoreChangeSuppressionInterval)
                 logger.info("Sync finished at \(finishedAt.formatted(date: .abbreviated, time: .standard), privacy: .public)")
                 if let onUpdate {
                     await onUpdate(
@@ -301,6 +317,12 @@ actor SyncEngine {
 
         let lastSeenInSourceAt = dateProvider()
         let sourceEventsByFallback = buildSourceEventsByFallbackKey(sourceEvents)
+        let sourceEventIdsInWindow = Set(
+            sourceEvents
+                .filter { !$0.isRecurring && $0.occurrenceDate == nil }
+                .compactMap(\.eventId)
+                .filter { !$0.isEmpty }
+        )
 
         var createdCount = 0
         var updatedCount = 0
@@ -329,8 +351,16 @@ actor SyncEngine {
 
         let allLinks = try await fetchAllLinkStates()
         for link in allLinks {
+            if linkIsRepresentedInWindow(
+                link,
+                sourceEventIdsInWindow: sourceEventIdsInWindow,
+                sourceEventsByFallback: sourceEventsByFallback
+            ) {
+                continue
+            }
+
             let sourceById = try await fetchSourceEventByIdentifier(link.sourceEventId)
-            if let sourceById {
+            if let sourceById, sourceEventMatchesLink(sourceById, link: link) {
                 let result = try await processSourceEvent(
                     sourceById,
                     existing: link,
@@ -505,6 +535,47 @@ actor SyncEngine {
         return sourceEventsByFallback[fallbackKey]
     }
 
+    private func linkIsRepresentedInWindow(
+        _ link: LinkState,
+        sourceEventIdsInWindow: Set<String>,
+        sourceEventsByFallback: [SourceFallbackKey: EventInfo]
+    ) -> Bool {
+        if sourceEventByFallback(link: link, sourceEventsByFallback: sourceEventsByFallback) != nil {
+            return true
+        }
+
+        guard
+            let sourceEventId = link.sourceEventId,
+            !sourceEventId.isEmpty
+        else {
+            return false
+        }
+        return sourceEventIdsInWindow.contains(sourceEventId)
+    }
+
+    private func sourceEventMatchesLink(_ sourceEvent: EventInfo, link: LinkState) -> Bool {
+        if link.sourceOccurrenceDate == nil {
+            if let linkSourceEventId = link.sourceEventId, !linkSourceEventId.isEmpty {
+                return sourceEvent.eventId == linkSourceEventId
+            }
+            guard let linkCalendarItemId = link.sourceCalendarItemId else {
+                return false
+            }
+            return sourceEvent.calendarItemId == linkCalendarItemId
+        }
+
+        guard let linkCalendarItemId = link.sourceCalendarItemId else {
+            return false
+        }
+        guard sourceEvent.calendarItemId == linkCalendarItemId else {
+            return false
+        }
+
+        let linkSourceDate = link.sourceOccurrenceDate
+        let sourceDate = sourceEvent.occurrenceDate ?? sourceEvent.startDate
+        return sourceDate == linkSourceDate
+    }
+
     private func deleteLinkAndChildEventIfNeeded(_ link: LinkState) async throws {
         if let childEventId = link.childEventId, !childEventId.isEmpty {
             try await performGatewayOperation(context: "deleteEvent") {
@@ -601,6 +672,7 @@ actor SyncEngine {
             eventId: nil,
             calendarItemId: nil,
             occurrenceDate: nil,
+            isRecurring: false,
             title: source.title,
             notes: source.notes,
             location: source.location,
@@ -611,7 +683,7 @@ actor SyncEngine {
             timeZone: source.timeZone,
             availability: source.availability,
             status: source.status,
-            alarms: source.alarms,
+            alarms: [],
             url: source.url
         )
     }

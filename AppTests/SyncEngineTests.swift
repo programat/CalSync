@@ -58,6 +58,38 @@ struct SyncEngineTests {
         #expect(await probe.runs == 2)
     }
 
+    @Test func eventStoreChangesAreSuppressedDuringAndRightAfterSync() async throws {
+        let probe = SyncRunProbe()
+        let (engine, gateway, _, _, _, userDefaults, suiteName) = makeSyncEngine(
+            debounce: .milliseconds(20),
+            eventStoreChangeSuppressionInterval: 0.3,
+            syncWorkOverride: { _ in
+                await probe.beginRun()
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                await probe.finishRun()
+                return SyncEngine.SyncResult(totalFetched: 0, created: 0, updated: 0, deleted: 0)
+            }
+        )
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        await engine.startObservingEventStoreChanges()
+
+        gateway.triggerStoreChange()
+        try await sleep(milliseconds: 40)
+        gateway.triggerStoreChange() // while syncing
+        try await sleep(milliseconds: 220)
+        gateway.triggerStoreChange() // right after sync, inside suppression window
+        try await sleep(milliseconds: 120)
+
+        #expect(await probe.runs == 1)
+
+        try await sleep(milliseconds: 300)
+        gateway.triggerStoreChange()
+        try await sleep(milliseconds: 100)
+
+        #expect(await probe.runs == 2)
+    }
+
     @Test func computeWindowUsesStartAndEndOfDay() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
@@ -75,6 +107,31 @@ struct SyncEngineTests {
 
         #expect(window.from == expectedFrom)
         #expect(window.to == expectedTo)
+    }
+
+    @Test func makeMirrorPayloadDropsAlarms() throws {
+        let sourceStart = Date(timeIntervalSince1970: 1_706_959_800)
+        let source = EventInfo(
+            eventId: "source-id",
+            calendarItemId: "item-id",
+            occurrenceDate: nil,
+            title: "Source",
+            notes: "Notes",
+            location: "Location",
+            structuredLocation: nil,
+            startDate: sourceStart,
+            endDate: sourceStart.addingTimeInterval(3600),
+            isAllDay: false,
+            timeZone: TimeZone(secondsFromGMT: 0),
+            availability: .busy,
+            status: .confirmed,
+            alarms: [AlarmInfo(absoluteDate: nil, relativeOffset: -900, structuredLocation: nil, proximity: .none)],
+            url: URL(string: "https://example.com")
+        )
+
+        let mirror = SyncEngine.makeMirrorPayload(from: source)
+
+        #expect(mirror.alarms.isEmpty)
     }
 
     @Test func syncNowFailsWhenCalendarsAreNotSelected() async throws {
@@ -390,6 +447,68 @@ struct SyncEngineTests {
         #expect(createdPayloads.allSatisfy { $0.calendarItemId == nil })
     }
 
+    @Test func recurringWithoutOccurrenceDateStillCreatesSeparateChildEvents() async throws {
+        let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.configureRecurringScenario(includeOccurrenceDate: false)
+
+        await engine.syncNow()
+
+        #expect(gateway.createEventCallCount == 3)
+        #expect(gateway.updateEventCallCount == 0)
+
+        let links = try await MainActor.run { try linkRepo.fetchAll() }
+        #expect(links.count == 3)
+        #expect(Set(links.compactMap(\.sourceStartLastSeen)).count == 3)
+        #expect(Set(links.compactMap(\.sourceEventId)).count == 1)
+    }
+
+    @Test func recurringOccurrenceDateCreatesSeparateChildEventsWhenRecurringFlagIsFalse() async throws {
+        let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+        gateway.configureRecurringScenario(includeOccurrenceDate: true, isRecurringFlag: false)
+
+        await engine.syncNow()
+
+        #expect(gateway.createEventCallCount == 3)
+        #expect(gateway.updateEventCallCount == 0)
+
+        let links = try await MainActor.run { try linkRepo.fetchAll() }
+        #expect(links.count == 3)
+        #expect(Set(links.compactMap(\.sourceOccurrenceDate)).count == 3)
+    }
+
+    @Test func recurringLinksInWindowAreNotReprocessedBySourceIdPass() async throws {
+        let (engine, gateway, linkRepo, _, settings, userDefaults, suiteName) = makeSyncEngine()
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        settings.sourceCalendarId = "source-calendar"
+        settings.childCalendarId = "child-calendar"
+
+        gateway.configureRecurringScenario()
+        gateway.eventsById["series-event-id"] = makeSourceEvent(
+            eventId: "series-event-id",
+            calendarItemId: "series-calendar-item-id",
+            isRecurring: true,
+            startAt: 1_900_000_000
+        )
+
+        await engine.syncNow()
+
+        #expect(gateway.createEventCallCount == 3)
+        #expect(gateway.updateEventCallCount == 0)
+
+        let links = try await MainActor.run { try linkRepo.fetchAll() }
+        #expect(links.count == 3)
+        #expect(Set(links.compactMap(\.sourceOccurrenceDate)).count == 3)
+    }
+
     @Test func resetSyncDeletesManagedChildEventsAndClearsLinks() async throws {
         let (engine, gateway, linkRepo, _, _, userDefaults, suiteName) = makeSyncEngine()
         defer { userDefaults.removePersistentDomain(forName: suiteName) }
@@ -481,6 +600,7 @@ private actor SyncUpdateProbe {
 
 private func makeSyncEngine(
     debounce: Duration = .seconds(2),
+    eventStoreChangeSuppressionInterval: TimeInterval = 2,
     onUpdate: SyncEngine.UpdateHandler? = nil,
     syncWorkOverride: SyncEngine.SyncWork? = nil
 ) -> (SyncEngine, FakeEventKitGateway, LinkRepository, ErrorRepository, UserDefaultsSettingsStore, UserDefaults, String) {
@@ -507,6 +627,7 @@ private func makeSyncEngine(
         errorRepo: errorRepo,
         settings: settings,
         debounceDuration: debounce,
+        eventStoreChangeSuppressionInterval: eventStoreChangeSuppressionInterval,
         onUpdate: onUpdate,
         syncWorkOverride: syncWorkOverride
     )
@@ -521,6 +642,7 @@ private func sleep(milliseconds: UInt64) async throws {
 private func makeSourceEvent(
     eventId: String?,
     calendarItemId: String?,
+    isRecurring: Bool = false,
     startAt timestamp: TimeInterval
 ) -> EventInfo {
     let startDate = Date(timeIntervalSince1970: timestamp)
@@ -528,6 +650,7 @@ private func makeSourceEvent(
         eventId: eventId,
         calendarItemId: calendarItemId,
         occurrenceDate: nil,
+        isRecurring: isRecurring,
         title: "Title \(eventId ?? "none")",
         notes: "Notes",
         location: "Location",

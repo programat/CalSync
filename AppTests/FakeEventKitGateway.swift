@@ -38,16 +38,21 @@ final class FakeEventKitGateway: EventKitGateway {
     private(set) var createEventCalls: [CreateEventCall] = []
     private(set) var updateEventCalls: [UpdateEventCall] = []
     private(set) var deletedEventIds: [String] = []
+    private var storeChangeHandler: (() -> Void)?
 
     func configureRecurringScenario(
         seriesEventId: String = "series-event-id",
         seriesCalendarItemId: String = "series-calendar-item-id",
-        startDate: Date = Date(timeIntervalSince1970: 1_737_000_000)
+        startDate: Date = Date(timeIntervalSince1970: 1_737_000_000),
+        includeOccurrenceDate: Bool = true,
+        isRecurringFlag: Bool = true
     ) {
         fetchEventsToReturn = Self.makeRecurringOccurrences(
             seriesEventId: seriesEventId,
             seriesCalendarItemId: seriesCalendarItemId,
-            startDate: startDate
+            startDate: startDate,
+            includeOccurrenceDate: includeOccurrenceDate,
+            isRecurringFlag: isRecurringFlag
         )
     }
 
@@ -112,13 +117,20 @@ final class FakeEventKitGateway: EventKitGateway {
     }
 
     func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject {
-        NSObject()
+        storeChangeHandler = handler
+        return NSObject()
+    }
+
+    func triggerStoreChange() {
+        storeChangeHandler?()
     }
 
     private static func makeRecurringOccurrences(
         seriesEventId: String,
         seriesCalendarItemId: String,
-        startDate: Date
+        startDate: Date,
+        includeOccurrenceDate: Bool,
+        isRecurringFlag: Bool
     ) -> [EventInfo] {
         let day: TimeInterval = 24 * 60 * 60
         return (0..<3).map { index in
@@ -126,7 +138,8 @@ final class FakeEventKitGateway: EventKitGateway {
             return EventInfo(
                 eventId: seriesEventId,
                 calendarItemId: seriesCalendarItemId,
-                occurrenceDate: occurrenceDate,
+                occurrenceDate: includeOccurrenceDate ? occurrenceDate : nil,
+                isRecurring: isRecurringFlag,
                 title: "Recurring \(index + 1)",
                 notes: "Occurrence \(index + 1)",
                 location: "Room \(index + 1)",

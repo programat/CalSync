@@ -22,7 +22,9 @@ nonisolated struct SourceEventKey {
             fallback = nil
         }
 
-        if sourceEvent.occurrenceDate != nil {
+        // Treat any event with occurrenceDate as a recurring instance even if
+        // EventKit does not expose recurrence rules on that instance.
+        if sourceEvent.isRecurring || sourceEvent.occurrenceDate != nil {
             primary = nil
         } else {
             primary = sourceEvent.eventId
