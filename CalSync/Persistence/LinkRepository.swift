@@ -8,7 +8,7 @@
 import CoreData
 import Foundation
 
-nonisolated struct SourceEventKey {
+nonisolated struct SourceEventKey: Sendable {
     let primary: String?
     let fallback: SourceFallbackKey?
 
@@ -37,7 +37,7 @@ nonisolated struct SourceFallbackKey: Hashable, Sendable {
     let sourceDate: Date
 }
 
-struct SyncedEventLinkPayload {
+nonisolated struct SyncedEventLinkPayload: Sendable {
     var id: UUID
     var sourceCalendarId: String
     var childCalendarId: String
@@ -156,37 +156,6 @@ final class LinkRepository {
         }
 
         return nil
-    }
-
-    func updateSourceEventIdIfNeeded(_ link: SyncedEventLink, newId: String?) throws {
-        try context.performAndWait {
-            guard
-                let linkId = link.id,
-                let newId,
-                !newId.isEmpty,
-                let persistedLink = try fetchInternal(id: linkId),
-                persistedLink.sourceEventId != newId
-            else {
-                return
-            }
-
-            persistedLink.sourceEventId = newId
-            try saveIfNeeded()
-        }
-    }
-
-    func updateLastSeenInSourceAt(_ link: SyncedEventLink, at timestamp: Date) throws {
-        try context.performAndWait {
-            guard
-                let linkId = link.id,
-                let persistedLink = try fetchInternal(id: linkId)
-            else {
-                return
-            }
-
-            persistedLink.lastSeenInSourceAt = timestamp
-            try saveIfNeeded()
-        }
     }
 
     private func fetchInternal(id: UUID) throws -> SyncedEventLink? {

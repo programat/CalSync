@@ -19,7 +19,7 @@ final class ErrorRepository {
     @discardableResult
     func addError(
         id: UUID = UUID(),
-        timestamp: Date = Date(),
+        timestamp: Date = .now,
         message: String,
         context errorContext: String? = nil
     ) throws -> SyncError {
@@ -41,12 +41,6 @@ final class ErrorRepository {
             request.fetchLimit = max(limit, 0)
             request.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
             return try context.fetch(request)
-        }
-    }
-
-    func trimTo(limit: Int) throws {
-        try context.performAndWait {
-            try trimExcessErrorsIfNeeded(limit: limit)
         }
     }
 

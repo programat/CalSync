@@ -96,14 +96,33 @@ final class EventKitGatewayImpl: EventKitGateway {
         try eventStore.remove(event, span: .thisEvent, commit: true)
     }
 
-    func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject {
-        NotificationCenter.default.addObserver(
+    func observeStoreChanges(_ handler: @escaping @Sendable () -> Void) -> AnyObject {
+        let notificationCenter = NotificationCenter.default
+        let observer = notificationCenter.addObserver(
             forName: .EKEventStoreChanged,
             object: eventStore,
             queue: .main
         ) { _ in
             handler()
         }
+        return NotificationObservation(
+            notificationCenter: notificationCenter,
+            observer: observer
+        )
+    }
+}
+
+nonisolated private final class NotificationObservation {
+    private let notificationCenter: NotificationCenter
+    private let observer: NSObjectProtocol
+
+    init(notificationCenter: NotificationCenter, observer: NSObjectProtocol) {
+        self.notificationCenter = notificationCenter
+        self.observer = observer
+    }
+
+    deinit {
+        notificationCenter.removeObserver(observer)
     }
 }
 
@@ -219,40 +238,4 @@ private extension EventKitGatewayImpl {
         }
     }
 
-    func makeStatus(from status: EventStatus) -> EKEventStatus {
-        switch status {
-        case .confirmed:
-            return .confirmed
-        case .tentative:
-            return .tentative
-        case .canceled:
-            return .canceled
-        case .none:
-            return .none
-        }
-    }
-
-    func makeAlarmProximity(from proximity: EKAlarmProximity) -> AlarmProximity {
-        switch proximity {
-        case .none:
-            return .none
-        case .enter:
-            return .enter
-        case .leave:
-            return .leave
-        @unknown default:
-            return .none
-        }
-    }
-
-    func makeAlarmProximity(from proximity: AlarmProximity) -> EKAlarmProximity {
-        switch proximity {
-        case .enter:
-            return .enter
-        case .leave:
-            return .leave
-        case .none:
-            return .none
-        }
-    }
 }

@@ -6,12 +6,19 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let viewModel = AppViewModel(eventKitGateway: EventKitGatewayImpl())
+
+    var statusPublisher: AnyPublisher<AppViewModel.Status, Never> {
+        viewModel.$status
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
 
     func onAppStart() async {
         await viewModel.onAppStart()
@@ -20,7 +27,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     func showMainWindow() {
         let window = window ?? createWindow()
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     func syncNow() {
@@ -40,7 +47,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             .environmentObject(viewModel)
         let hostingView = NSHostingView(rootView: view)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false

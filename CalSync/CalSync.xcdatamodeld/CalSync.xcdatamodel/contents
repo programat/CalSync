@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="false" userDefinedModelVersionIdentifier="">
-    <entity name="SyncedEventLink" representedClassName="SyncedEventLink" syncable="YES" codeGenerationType="class">
+    <entity name="SyncedEventLink" representedClassName="SyncedEventLink" syncable="YES" codeGenerationType="manual/none">
         <attribute name="childCalendarId" optional="NO" attributeType="String"/>
         <attribute name="childEventId" optional="NO" attributeType="String"/>
         <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
@@ -14,7 +14,7 @@
         <attribute name="sourceOccurrenceDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="sourceStartLastSeen" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
-    <entity name="SyncError" representedClassName="SyncError" syncable="YES" codeGenerationType="class">
+    <entity name="SyncError" representedClassName="SyncError" syncable="YES" codeGenerationType="manual/none">
         <attribute name="context" optional="YES" attributeType="String"/>
         <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="message" optional="NO" attributeType="String"/>

@@ -9,10 +9,17 @@ import Foundation
 import CryptoKit
 import os
 
-nonisolated enum SyncReason: Hashable, Sendable {
+nonisolated enum SyncReason: String, CaseIterable, Hashable, Sendable {
     case manual
     case eventStoreChanged
     case fallbackTimer
+    case settingsChanged
+    case appLaunch
+    case autoSyncEnabled
+
+    var isAutomatic: Bool {
+        self != .manual
+    }
 }
 
 nonisolated protocol SyncEngineClock: Sendable {
@@ -28,9 +35,16 @@ nonisolated struct ContinuousSyncEngineClock: SyncEngineClock {
 }
 
 nonisolated enum SyncEngineUpdate: Equatable, Sendable {
-    case syncing
-    case completed(lastSyncAt: Date, totalFetched: Int, created: Int, updated: Int, deleted: Int)
-    case failed(message: String)
+    case syncing(startedAt: Date, reasons: Set<SyncReason>)
+    case completed(
+        finishedAt: Date,
+        reasons: Set<SyncReason>,
+        totalFetched: Int,
+        created: Int,
+        updated: Int,
+        deleted: Int
+    )
+    case failed(finishedAt: Date, reasons: Set<SyncReason>, message: String)
 }
 
 nonisolated enum SyncEngineError: LocalizedError {
@@ -42,13 +56,13 @@ nonisolated enum SyncEngineError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .calendarsNotSelected:
-            return "Source и Child календари должны быть выбраны."
+            return "Выберите Source и Child календари."
         case .sourceCalendarUnavailable:
-            return "Выбранный Source календарь недоступен."
+            return "Source календарь недоступен."
         case .childCalendarUnavailable:
-            return "Выбранный Child календарь недоступен."
+            return "Child календарь недоступен."
         case .childCalendarReadOnly:
-            return "Выбранный Child календарь недоступен для записи."
+            return "Child календарь недоступен для записи."
         }
     }
 }
@@ -72,11 +86,52 @@ actor SyncEngine {
         let sourceStartLastSeen: Date?
         let childEventId: String?
         let lastSyncHash: String?
+
+        init(_ link: SyncedEventLink) {
+            id = link.id
+            sourceEventId = link.sourceEventId
+            sourceCalendarItemId = link.sourceCalendarItemId
+            sourceOccurrenceDate = link.sourceOccurrenceDate
+            sourceStartLastSeen = link.sourceStartLastSeen
+            childEventId = link.childEventId
+            lastSyncHash = link.lastSyncHash
+        }
     }
 
     private struct EventProcessResult {
         let created: Int
         let updated: Int
+        let deleted: Int
+        let excluded: Bool
+    }
+
+    private struct CanceledEventFilter {
+        let excludeByStatus: Bool
+        let titlePrefixes: [String]?
+
+        init(
+            excludeByStatus: Bool,
+            useTitlePrefixes: Bool,
+            titlePrefixes: [String]
+        ) {
+            self.excludeByStatus = excludeByStatus
+            self.titlePrefixes = useTitlePrefixes
+                ? CanceledTitlePrefixRules.normalized(titlePrefixes)
+                : nil
+        }
+
+        func excludes(_ event: EventInfo) -> Bool {
+            if excludeByStatus, event.status == .canceled {
+                return true
+            }
+            guard let titlePrefixes else {
+                return false
+            }
+            return CanceledTitlePrefixRules.title(
+                event.title,
+                hasAnyNormalizedPrefix: titlePrefixes
+            )
+        }
     }
 
     typealias SyncWork = @Sendable (Set<SyncReason>) async throws -> SyncResult
@@ -88,7 +143,7 @@ actor SyncEngine {
     private let dateProvider: DateProvider
     private let clock: any SyncEngineClock
     private let debounceDuration: Duration
-    private let fallbackInterval: Duration
+    private var fallbackInterval: Duration
     private let eventStoreChangeSuppressionInterval: TimeInterval
     private let calendar: Calendar
     private let onUpdate: UpdateHandler?
@@ -98,9 +153,12 @@ actor SyncEngine {
     private var eventStoreObserver: AnyObject?
     private var debounceTask: Task<Void, Never>?
     private var fallbackTask: Task<Void, Never>?
+    private var deferredEventStoreChangeTask: Task<Void, Never>?
     private var pendingReasons: Set<SyncReason> = []
     private var isSyncing = false
+    private var isAutoSyncEnabled = true
     private var needResync = false
+    private var hasDeferredEventStoreChange = false
     private var suppressEventStoreChangesUntil: Date?
 
     init(
@@ -108,7 +166,7 @@ actor SyncEngine {
         linkRepo: LinkRepository,
         errorRepo: ErrorRepository,
         settings: SettingsStore,
-        dateProvider: @escaping DateProvider = Date.init,
+        dateProvider: @escaping DateProvider = { .now },
         clock: any SyncEngineClock = ContinuousSyncEngineClock(),
         debounceDuration: Duration = .seconds(2),
         fallbackInterval: Duration = .seconds(15 * 60),
@@ -134,9 +192,13 @@ actor SyncEngine {
     deinit {
         debounceTask?.cancel()
         fallbackTask?.cancel()
+        deferredEventStoreChangeTask?.cancel()
     }
 
     func requestSync(reason: SyncReason) {
+        guard !reason.isAutomatic || isAutoSyncEnabled else {
+            return
+        }
         pendingReasons.insert(reason)
 
         debounceTask?.cancel()
@@ -150,11 +212,39 @@ actor SyncEngine {
         }
     }
 
-    func syncNow() async {
-        pendingReasons.insert(.manual)
+    func syncNow(reason: SyncReason = .manual) async {
+        guard !reason.isAutomatic || isAutoSyncEnabled else {
+            return
+        }
+        pendingReasons.insert(reason)
         debounceTask?.cancel()
         debounceTask = nil
         await startSyncIfPossible()
+    }
+
+    func configureAutoSync(isEnabled: Bool, fallbackInterval: Duration) {
+        isAutoSyncEnabled = isEnabled
+        if fallbackInterval > .zero {
+            self.fallbackInterval = fallbackInterval
+        }
+
+        if isEnabled {
+            startObservingEventStoreChanges()
+            startFallbackTimer()
+        } else {
+            stopAutomaticSyncTasks()
+        }
+    }
+
+    func configureAutoSyncFromSettings() {
+        let intervalMinutes = min(
+            max(settings.autoSyncIntervalMinutes, 1),
+            1_440
+        )
+        configureAutoSync(
+            isEnabled: settings.isAutoSyncEnabled,
+            fallbackInterval: .seconds(Int64(intervalMinutes * 60))
+        )
     }
 
     func resetSync() async {
@@ -179,6 +269,9 @@ actor SyncEngine {
             needResync = false
             debounceTask?.cancel()
             debounceTask = nil
+            deferredEventStoreChangeTask?.cancel()
+            deferredEventStoreChangeTask = nil
+            hasDeferredEventStoreChange = false
             suppressEventStoreChangesUntil = nil
             logger.info("Reset sync: cleared links and errors.")
         } catch {
@@ -198,17 +291,74 @@ actor SyncEngine {
     }
 
     func startFallbackTimer() {
+        guard isAutoSyncEnabled else {
+            return
+        }
         fallbackTask?.cancel()
-        fallbackTask = Task { [clock, fallbackInterval] in
+        let interval = fallbackInterval
+        fallbackTask = Task { [weak self, clock, interval] in
             while !Task.isCancelled {
                 do {
-                    try await clock.sleep(for: fallbackInterval)
+                    try await clock.sleep(for: interval)
                 } catch {
                     return
                 }
-                self.requestSync(reason: .fallbackTimer)
+                guard let self else {
+                    return
+                }
+                await self.syncNow(reason: .fallbackTimer)
             }
         }
+    }
+
+    private func stopAutomaticSyncTasks() {
+        eventStoreObserver = nil
+        fallbackTask?.cancel()
+        fallbackTask = nil
+        deferredEventStoreChangeTask?.cancel()
+        deferredEventStoreChangeTask = nil
+        hasDeferredEventStoreChange = false
+
+        pendingReasons = Set(pendingReasons.filter { !$0.isAutomatic })
+        if pendingReasons.isEmpty {
+            debounceTask?.cancel()
+            debounceTask = nil
+            needResync = false
+        }
+    }
+
+    private func scheduleDeferredEventStoreChangeIfNeeded() {
+        guard
+            isAutoSyncEnabled,
+            hasDeferredEventStoreChange,
+            deferredEventStoreChangeTask == nil
+        else {
+            return
+        }
+
+        let remainingSuppression = max(
+            0,
+            suppressEventStoreChangesUntil?.timeIntervalSince(dateProvider()) ?? 0
+        )
+        let delay = Duration.seconds(remainingSuppression) + debounceDuration
+        hasDeferredEventStoreChange = false
+        deferredEventStoreChangeTask = Task { [weak self, clock, delay] in
+            do {
+                try await clock.sleep(for: delay)
+            } catch {
+                return
+            }
+            await self?.runDeferredEventStoreChange()
+        }
+    }
+
+    private func runDeferredEventStoreChange() async {
+        deferredEventStoreChangeTask = nil
+        hasDeferredEventStoreChange = false
+        guard isAutoSyncEnabled else {
+            return
+        }
+        await syncNow(reason: .eventStoreChanged)
     }
 
     private func flushDebouncedSyncRequest() async {
@@ -217,10 +367,16 @@ actor SyncEngine {
     }
 
     private func handleEventStoreChanged() {
+        guard isAutoSyncEnabled else {
+            return
+        }
         if isSyncing {
+            hasDeferredEventStoreChange = true
             return
         }
         if let suppressUntil = suppressEventStoreChangesUntil, dateProvider() < suppressUntil {
+            hasDeferredEventStoreChange = true
+            scheduleDeferredEventStoreChangeIfNeeded()
             return
         }
         requestSync(reason: .eventStoreChanged)
@@ -242,9 +398,10 @@ actor SyncEngine {
 
             let reasons = pendingReasons
             pendingReasons.removeAll()
+            let startedAt = dateProvider()
 
             if let onUpdate {
-                await onUpdate(.syncing)
+                await onUpdate(.syncing(startedAt: startedAt, reasons: reasons))
             }
 
             do {
@@ -256,7 +413,8 @@ actor SyncEngine {
                 if let onUpdate {
                     await onUpdate(
                         .completed(
-                            lastSyncAt: finishedAt,
+                            finishedAt: finishedAt,
+                            reasons: reasons,
                             totalFetched: result.totalFetched,
                             created: result.created,
                             updated: result.updated,
@@ -266,13 +424,21 @@ actor SyncEngine {
                 }
             } catch {
                 let message = syncErrorMessage(for: error)
+                let finishedAt = dateProvider()
                 logger.error("Sync failed: \(message, privacy: .public)")
                 if let onUpdate {
-                    await onUpdate(.failed(message: message))
+                    await onUpdate(
+                        .failed(
+                            finishedAt: finishedAt,
+                            reasons: reasons,
+                            message: message
+                        )
+                    )
                 }
             }
 
             isSyncing = false
+            scheduleDeferredEventStoreChangeIfNeeded()
         } while needResync || !pendingReasons.isEmpty
     }
 
@@ -307,6 +473,11 @@ actor SyncEngine {
             daysForward: settings.daysForward,
             calendar: calendar
         )
+        let canceledEventFilter = CanceledEventFilter(
+            excludeByStatus: settings.excludeCanceledEventsByStatus,
+            useTitlePrefixes: settings.useCanceledTitlePrefixFilter,
+            titlePrefixes: settings.canceledTitlePrefixes
+        )
         let sourceEvents = try await performGatewayOperation(context: "fetchEvents") {
             try gateway.fetchEvents(
                 calendarId: sourceCalendarId,
@@ -329,19 +500,23 @@ actor SyncEngine {
         var deletedCount = 0
         var matchedCount = 0
         var unmatchedCount = 0
+        var excludedCount = 0
 
         for sourceEvent in sourceEvents {
             let existingLink = try await findLinkState(for: sourceEvent)
-            let result = try await processSourceEvent(
+            let result = try await reconcileSourceEvent(
                 sourceEvent,
                 existing: existingLink,
                 sourceCalendarId: sourceCalendarId,
                 childCalendarId: childCalendarId,
-                lastSeenInSourceAt: lastSeenInSourceAt
+                lastSeenInSourceAt: lastSeenInSourceAt,
+                canceledEventFilter: canceledEventFilter
             )
 
             createdCount += result.created
             updatedCount += result.updated
+            deletedCount += result.deleted
+            excludedCount += result.excluded ? 1 : 0
             if existingLink == nil {
                 unmatchedCount += 1
             } else {
@@ -361,29 +536,35 @@ actor SyncEngine {
 
             let sourceById = try await fetchSourceEventByIdentifier(link.sourceEventId)
             if let sourceById, sourceEventMatchesLink(sourceById, link: link) {
-                let result = try await processSourceEvent(
+                let result = try await reconcileSourceEvent(
                     sourceById,
                     existing: link,
                     sourceCalendarId: sourceCalendarId,
                     childCalendarId: childCalendarId,
-                    lastSeenInSourceAt: lastSeenInSourceAt
+                    lastSeenInSourceAt: lastSeenInSourceAt,
+                    canceledEventFilter: canceledEventFilter
                 )
                 createdCount += result.created
                 updatedCount += result.updated
+                deletedCount += result.deleted
+                excludedCount += result.excluded ? 1 : 0
                 continue
             }
 
             let fallbackEvent = sourceEventByFallback(link: link, sourceEventsByFallback: sourceEventsByFallback)
             if let fallbackEvent {
-                let result = try await processSourceEvent(
+                let result = try await reconcileSourceEvent(
                     fallbackEvent,
                     existing: link,
                     sourceCalendarId: sourceCalendarId,
                     childCalendarId: childCalendarId,
-                    lastSeenInSourceAt: lastSeenInSourceAt
+                    lastSeenInSourceAt: lastSeenInSourceAt,
+                    canceledEventFilter: canceledEventFilter
                 )
                 createdCount += result.created
                 updatedCount += result.updated
+                deletedCount += result.deleted
+                excludedCount += result.excluded ? 1 : 0
                 continue
             }
 
@@ -392,7 +573,7 @@ actor SyncEngine {
         }
 
         logger.info(
-            "Fetched source events=\(sourceEvents.count, privacy: .public), matched=\(matchedCount, privacy: .public), unmatched=\(unmatchedCount, privacy: .public), created=\(createdCount, privacy: .public), updated=\(updatedCount, privacy: .public), deleted=\(deletedCount, privacy: .public)"
+            "Fetched source events=\(sourceEvents.count, privacy: .public), excluded=\(excludedCount, privacy: .public), matched=\(matchedCount, privacy: .public), unmatched=\(unmatchedCount, privacy: .public), created=\(createdCount, privacy: .public), updated=\(updatedCount, privacy: .public), deleted=\(deletedCount, privacy: .public)"
         )
         return SyncResult(
             totalFetched: sourceEvents.count,
@@ -411,6 +592,31 @@ actor SyncEngine {
             return message
         }
         return error.localizedDescription
+    }
+
+    private func reconcileSourceEvent(
+        _ sourceEvent: EventInfo,
+        existing: LinkState?,
+        sourceCalendarId: String,
+        childCalendarId: String,
+        lastSeenInSourceAt: Date,
+        canceledEventFilter: CanceledEventFilter
+    ) async throws -> EventProcessResult {
+        if canceledEventFilter.excludes(sourceEvent) {
+            guard let existing else {
+                return EventProcessResult(created: 0, updated: 0, deleted: 0, excluded: true)
+            }
+            try await deleteLinkAndChildEventIfNeeded(existing)
+            return EventProcessResult(created: 0, updated: 0, deleted: 1, excluded: true)
+        }
+
+        return try await processSourceEvent(
+            sourceEvent,
+            existing: existing,
+            sourceCalendarId: sourceCalendarId,
+            childCalendarId: childCalendarId,
+            lastSeenInSourceAt: lastSeenInSourceAt
+        )
     }
 
     private func processSourceEvent(
@@ -456,7 +662,7 @@ actor SyncEngine {
             lastSyncHash: payloadHash
         )
 
-        return EventProcessResult(created: created, updated: updated)
+        return EventProcessResult(created: created, updated: updated, deleted: 0, excluded: false)
     }
 
     private func findLinkState(for sourceEvent: EventInfo) async throws -> LinkState? {
@@ -464,32 +670,14 @@ actor SyncEngine {
             guard let link = try linkRepo.findLink(for: sourceEvent) else {
                 return Optional<LinkState>.none
             }
-            return LinkState(
-                id: link.id,
-                sourceEventId: link.sourceEventId,
-                sourceCalendarItemId: link.sourceCalendarItemId,
-                sourceOccurrenceDate: link.sourceOccurrenceDate,
-                sourceStartLastSeen: link.sourceStartLastSeen,
-                childEventId: link.childEventId,
-                lastSyncHash: link.lastSyncHash
-            )
+            return LinkState(link)
         }
     }
 
     private func fetchAllLinkStates() async throws -> [LinkState] {
         try await MainActor.run { [linkRepo] in
             let links = try linkRepo.fetchAll()
-            return links.map { link in
-                LinkState(
-                    id: link.id,
-                    sourceEventId: link.sourceEventId,
-                    sourceCalendarItemId: link.sourceCalendarItemId,
-                    sourceOccurrenceDate: link.sourceOccurrenceDate,
-                    sourceStartLastSeen: link.sourceStartLastSeen,
-                    childEventId: link.childEventId,
-                    lastSyncHash: link.lastSyncHash
-                )
-            }
+            return links.map(LinkState.init)
         }
     }
 
@@ -616,7 +804,6 @@ actor SyncEngine {
                     message: message,
                     context: context
                 )
-                try errorRepo.trimTo(limit: 20)
             }
         } catch {
             logger.error("Failed to persist sync error: \(error.localizedDescription, privacy: .public)")
@@ -688,6 +875,19 @@ actor SyncEngine {
         )
     }
 
+    nonisolated static func shouldExcludeFromSync(
+        _ source: EventInfo,
+        excludeCanceledEventsByStatus: Bool,
+        useCanceledTitlePrefixFilter: Bool,
+        canceledTitlePrefixes: [String] = CanceledTitlePrefixRules.defaultPrefixes
+    ) -> Bool {
+        CanceledEventFilter(
+            excludeByStatus: excludeCanceledEventsByStatus,
+            useTitlePrefixes: useCanceledTitlePrefixFilter,
+            titlePrefixes: canceledTitlePrefixes
+        ).excludes(source)
+    }
+
     nonisolated static func hashKeyFields(for payload: EventInfo) -> String {
         var fields: [String] = []
         fields.append(payload.title)
@@ -707,8 +907,8 @@ actor SyncEngine {
         fields.append(String(payload.endDate.timeIntervalSince1970))
         fields.append(payload.isAllDay ? "1" : "0")
         fields.append(payload.timeZone?.identifier ?? "")
-        fields.append(string(from: payload.availability))
-        fields.append(string(from: payload.status))
+        fields.append(payload.availability.rawValue)
+        fields.append(payload.status.rawValue)
         fields.append(payload.url?.absoluteString ?? "")
 
         for alarm in payload.alarms {
@@ -722,50 +922,11 @@ actor SyncEngine {
             } else {
                 fields.append("")
             }
-            fields.append(string(from: alarm.proximity))
+            fields.append(alarm.proximity.rawValue)
         }
 
         let digest = SHA256.hash(data: Data(fields.joined(separator: "|").utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    nonisolated private static func string(from availability: EventAvailability) -> String {
-        switch availability {
-        case .notSupported:
-            return "notSupported"
-        case .busy:
-            return "busy"
-        case .free:
-            return "free"
-        case .tentative:
-            return "tentative"
-        case .unavailable:
-            return "unavailable"
-        }
-    }
-
-    nonisolated private static func string(from status: EventStatus) -> String {
-        switch status {
-        case .none:
-            return "none"
-        case .confirmed:
-            return "confirmed"
-        case .tentative:
-            return "tentative"
-        case .canceled:
-            return "canceled"
-        }
-    }
-
-    nonisolated private static func string(from proximity: AlarmProximity) -> String {
-        switch proximity {
-        case .none:
-            return "none"
-        case .enter:
-            return "enter"
-        case .leave:
-            return "leave"
-        }
     }
 
     nonisolated static func computeWindow(

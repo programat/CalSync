@@ -15,7 +15,7 @@ nonisolated protocol EventKitGateway {
     func createEvent(in calendarId: String, payload: EventInfo) throws -> String
     func updateEvent(eventId: String, payload: EventInfo) throws
     func deleteEvent(eventId: String) throws
-    func observeStoreChanges(_ handler: @escaping () -> Void) -> AnyObject
+    func observeStoreChanges(_ handler: @escaping @Sendable () -> Void) -> AnyObject
 }
 
 nonisolated enum EventKitGatewayError: Error, Equatable, LocalizedError {

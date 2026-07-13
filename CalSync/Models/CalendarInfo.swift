@@ -7,9 +7,16 @@
 
 import Foundation
 
-struct CalendarInfo: Identifiable, Equatable {
+nonisolated struct CalendarInfo: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let sourceTitle: String?
     let isWritable: Bool
+
+    var displayTitle: String {
+        guard let sourceTitle, !sourceTitle.isEmpty else {
+            return title
+        }
+        return "\(title) (\(sourceTitle))"
+    }
 }

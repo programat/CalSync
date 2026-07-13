@@ -12,7 +12,7 @@ import os
 
 @MainActor
 final class AppViewModel: ObservableObject {
-    enum Status: Equatable {
+    nonisolated enum Status: Equatable, Sendable {
         case idle
         case syncing
         case error(String?)
@@ -22,12 +22,14 @@ final class AppViewModel: ObservableObject {
         didSet {
             settingsStore.sourceCalendarId = sourceCalendarId
             validateSelectedCalendars()
+            requestSyncAfterSettingsChangeIfReady()
         }
     }
     @Published var childCalendarId: String? {
         didSet {
             settingsStore.childCalendarId = childCalendarId
             validateSelectedCalendars()
+            requestSyncAfterSettingsChangeIfReady()
         }
     }
     @Published var calendars: [CalendarInfo] {
@@ -38,15 +40,56 @@ final class AppViewModel: ObservableObject {
     @Published var daysBack: Int {
         didSet {
             settingsStore.daysBack = daysBack
+            requestSyncAfterSettingsChangeIfReady()
         }
     }
     @Published var daysForward: Int {
         didSet {
             settingsStore.daysForward = daysForward
+            requestSyncAfterSettingsChangeIfReady()
+        }
+    }
+    @Published var excludeCanceledEventsByStatus: Bool {
+        didSet {
+            settingsStore.excludeCanceledEventsByStatus = excludeCanceledEventsByStatus
+            requestSyncAfterSettingsChangeIfReady()
+        }
+    }
+    @Published var useCanceledTitlePrefixFilter: Bool {
+        didSet {
+            settingsStore.useCanceledTitlePrefixFilter = useCanceledTitlePrefixFilter
+            requestSyncAfterSettingsChangeIfReady()
+        }
+    }
+    @Published private(set) var canceledTitlePrefixes: [String] {
+        didSet {
+            settingsStore.canceledTitlePrefixes = canceledTitlePrefixes
+            requestSyncAfterSettingsChangeIfReady()
+        }
+    }
+    @Published var isAutoSyncEnabled: Bool {
+        didSet {
+            settingsStore.isAutoSyncEnabled = isAutoSyncEnabled
+            reconfigureAutoSync(runImmediatelyWhenEnabled: isAutoSyncEnabled)
+        }
+    }
+    @Published var autoSyncIntervalMinutes: Int {
+        didSet {
+            let clampedValue = UserDefaultsSettingsStore.clampAutoSyncIntervalMinutes(
+                autoSyncIntervalMinutes
+            )
+            if autoSyncIntervalMinutes != clampedValue {
+                autoSyncIntervalMinutes = clampedValue
+            }
+            settingsStore.autoSyncIntervalMinutes = autoSyncIntervalMinutes
+            reconfigureAutoSync(runImmediatelyWhenEnabled: false)
         }
     }
     @Published var status: Status
-    @Published var lastSyncAt: Date?
+    @Published var lastSuccessfulSyncAt: Date?
+    @Published var lastSyncAttemptAt: Date?
+    @Published var lastSyncOutcome: SyncAttemptSnapshot.Outcome?
+    @Published var lastSyncReasons: Set<SyncReason>
     @Published var totalFetchedCount: Int
     @Published var createdCount: Int
     @Published var updatedCount: Int
@@ -55,6 +98,7 @@ final class AppViewModel: ObservableObject {
 
     private let eventKitGateway: EventKitGateway
     private let settingsStore: SettingsStore
+    private let diagnosticsStore: SyncDiagnosticsStore
     private var syncEngine: SyncEngine?
     private var didStart = false
     private var isValidatingCalendars = false
@@ -63,36 +107,45 @@ final class AppViewModel: ObservableObject {
     init(
         eventKitGateway: EventKitGateway? = nil,
         settingsStore: SettingsStore? = nil,
-        sourceCalendarId: String? = nil,
-        childCalendarId: String? = nil,
-        calendars: [CalendarInfo] = [],
-        daysBack: Int? = nil,
-        daysForward: Int? = nil,
-        status: Status = .idle,
-        lastSyncAt: Date? = nil,
-        totalFetchedCount: Int = 0,
-        createdCount: Int = 0,
-        updatedCount: Int = 0,
-        deletedCount: Int = 0,
-        errors: [String] = []
+        diagnosticsStore: SyncDiagnosticsStore? = nil,
+        persistenceController: PersistenceController? = nil
     ) {
         let settingsStore = settingsStore ?? UserDefaultsSettingsStore()
+        let diagnosticsStore = diagnosticsStore ?? UserDefaultsSyncDiagnosticsStore()
+        let storedAttempt = diagnosticsStore.lastAttempt
         self.eventKitGateway = eventKitGateway ?? EventKitGatewayImpl()
         self.settingsStore = settingsStore
-        self.sourceCalendarId = sourceCalendarId ?? settingsStore.sourceCalendarId
-        self.childCalendarId = childCalendarId ?? settingsStore.childCalendarId
-        self.calendars = calendars
-        self.daysBack = daysBack ?? settingsStore.daysBack
-        self.daysForward = daysForward ?? settingsStore.daysForward
-        self.status = status
-        self.lastSyncAt = lastSyncAt
-        self.totalFetchedCount = totalFetchedCount
-        self.createdCount = createdCount
-        self.updatedCount = updatedCount
-        self.deletedCount = deletedCount
-        self.errors = errors
+        self.diagnosticsStore = diagnosticsStore
+        self.sourceCalendarId = settingsStore.sourceCalendarId
+        self.childCalendarId = settingsStore.childCalendarId
+        self.calendars = []
+        self.daysBack = settingsStore.daysBack
+        self.daysForward = settingsStore.daysForward
+        self.excludeCanceledEventsByStatus = settingsStore.excludeCanceledEventsByStatus
+        self.useCanceledTitlePrefixFilter = settingsStore.useCanceledTitlePrefixFilter
+        self.canceledTitlePrefixes = CanceledTitlePrefixRules.normalized(
+            settingsStore.canceledTitlePrefixes
+        )
+        self.isAutoSyncEnabled = settingsStore.isAutoSyncEnabled
+        self.autoSyncIntervalMinutes = UserDefaultsSettingsStore.clampAutoSyncIntervalMinutes(
+            settingsStore.autoSyncIntervalMinutes
+        )
+        if storedAttempt?.outcome == .failed {
+            self.status = .error("Последняя попытка синхронизации завершилась ошибкой.")
+        } else {
+            self.status = .idle
+        }
+        self.lastSuccessfulSyncAt = diagnosticsStore.lastSuccessfulSyncAt
+        self.lastSyncAttemptAt = storedAttempt?.timestamp
+        self.lastSyncOutcome = storedAttempt?.outcome
+        self.lastSyncReasons = storedAttempt?.reasons ?? []
+        self.totalFetchedCount = storedAttempt?.metrics?.totalFetched ?? 0
+        self.createdCount = storedAttempt?.metrics?.created ?? 0
+        self.updatedCount = storedAttempt?.metrics?.updated ?? 0
+        self.deletedCount = storedAttempt?.metrics?.deleted ?? 0
+        self.errors = []
 
-        let persistence = PersistenceController.shared
+        let persistence = persistenceController ?? PersistenceController.shared
         let linkRepo = LinkRepository(context: persistence.container.viewContext)
         let errorRepo = ErrorRepository(context: persistence.container.viewContext)
         self.syncEngine = SyncEngine(
@@ -109,15 +162,20 @@ final class AppViewModel: ObservableObject {
     func onAppStart() async {
         guard !didStart else { return }
         didStart = true
-        await requestCalendarAccess()
-        await syncEngine?.startObservingEventStoreChanges()
-        await syncEngine?.startFallbackTimer()
+        await requestCalendarAccess(scheduleAutoSyncOnSuccess: false)
+        await syncEngine?.configureAutoSyncFromSettings()
+        if isAutoSyncEnabled, isSyncConfigurationReady {
+            await syncEngine?.syncNow(reason: .appLaunch)
+        }
     }
 
-    func requestCalendarAccess() async {
+    func requestCalendarAccess(scheduleAutoSyncOnSuccess: Bool = true) async {
         do {
             try await eventKitGateway.requestAccess()
             await loadCalendars()
+            if scheduleAutoSyncOnSuccess {
+                requestSyncAfterSettingsChangeIfReady()
+            }
         } catch {
             let message = accessErrorMessage(for: error)
             status = .error(message)
@@ -128,11 +186,12 @@ final class AppViewModel: ObservableObject {
     func loadCalendars() async {
         do {
             let calendars = try eventKitGateway.fetchCalendars()
-            self.calendars = calendars
-            let isValid = validateSelectedCalendars()
-            if isValid {
+            if lastSyncOutcome == .failed {
+                status = .error("Последняя попытка синхронизации завершилась ошибкой.")
+            } else {
                 status = .idle
             }
+            self.calendars = calendars
         } catch {
             let message = "Не удалось загрузить календари: \(error.localizedDescription)"
             status = .error(message)
@@ -148,40 +207,76 @@ final class AppViewModel: ObservableObject {
     }
 
     func resetSync() {
-        Task {
+        Task { @MainActor in
             await syncEngine?.resetSync()
-            await MainActor.run {
-                status = .idle
-                lastSyncAt = nil
-                totalFetchedCount = 0
-                createdCount = 0
-                updatedCount = 0
-                deletedCount = 0
-                errors.removeAll()
-            }
+            status = .idle
+            lastSuccessfulSyncAt = nil
+            lastSyncAttemptAt = nil
+            lastSyncOutcome = nil
+            lastSyncReasons = []
+            totalFetchedCount = 0
+            createdCount = 0
+            updatedCount = 0
+            deletedCount = 0
+            errors.removeAll()
+            diagnosticsStore.clear()
         }
     }
 
-    func placeholderSync() {
-        status = .syncing
-        lastSyncAt = Date()
-        createdCount += 1
-        errors.append("Sync placeholder at \(formattedTimestamp(lastSyncAt))")
-        status = .idle
+    func canAddCanceledTitlePrefix(_ prefix: String) -> Bool {
+        CanceledTitlePrefixRules.adding(prefix, to: canceledTitlePrefixes) != nil
     }
 
-    func placeholderReset() {
-        status = .syncing
-        createdCount = 0
-        updatedCount = 0
-        deletedCount = 0
-        errors.append("Reset placeholder at \(formattedTimestamp(Date()))")
-        status = .idle
+    @discardableResult
+    func addCanceledTitlePrefix(_ prefix: String) -> Bool {
+        guard let updatedPrefixes = CanceledTitlePrefixRules.adding(
+            prefix,
+            to: canceledTitlePrefixes
+        ) else {
+            return false
+        }
+        canceledTitlePrefixes = updatedPrefixes
+        return true
     }
 
-    private func formattedTimestamp(_ date: Date?) -> String {
-        guard let date else { return "—" }
-        return date.formatted(date: .abbreviated, time: .standard)
+    func removeCanceledTitlePrefix(_ prefix: String) {
+        canceledTitlePrefixes.removeAll { $0 == prefix }
+    }
+
+    private var isSyncConfigurationReady: Bool {
+        guard
+            let sourceCalendarId,
+            let childCalendarId,
+            sourceCalendarId != childCalendarId,
+            calendars.contains(where: { $0.id == sourceCalendarId }),
+            let childCalendar = calendars.first(where: { $0.id == childCalendarId }),
+            childCalendar.isWritable
+        else {
+            return false
+        }
+        return true
+    }
+
+    private func requestSyncAfterSettingsChangeIfReady() {
+        guard didStart, isAutoSyncEnabled, isSyncConfigurationReady else {
+            return
+        }
+        Task {
+            await syncEngine?.requestSync(reason: .settingsChanged)
+        }
+    }
+
+    private func reconfigureAutoSync(runImmediatelyWhenEnabled: Bool) {
+        guard didStart else {
+            return
+        }
+        let shouldRunImmediately = runImmediatelyWhenEnabled && isSyncConfigurationReady
+        Task {
+            await syncEngine?.configureAutoSyncFromSettings()
+            if shouldRunImmediately {
+                await syncEngine?.syncNow(reason: .autoSyncEnabled)
+            }
+        }
     }
 
     @discardableResult
@@ -195,12 +290,12 @@ final class AppViewModel: ObservableObject {
 
         if let sourceCalendarId, !calendarIds.contains(sourceCalendarId) {
             self.sourceCalendarId = nil
-            setValidationError("Выбранный Source календарь недоступен.")
+            setValidationError("Source календарь недоступен.")
             isValid = false
         }
         if let childCalendarId, !calendarIds.contains(childCalendarId) {
             self.childCalendarId = nil
-            setValidationError("Выбранный Child календарь недоступен.")
+            setValidationError("Child календарь недоступен.")
             isValid = false
         }
         if
@@ -209,12 +304,12 @@ final class AppViewModel: ObservableObject {
             !childCalendar.isWritable
         {
             self.childCalendarId = nil
-            setValidationError("Выбранный Child календарь недоступен для записи.")
+            setValidationError("Child календарь недоступен для записи.")
             isValid = false
         }
         if let sourceCalendarId, let childCalendarId, sourceCalendarId == childCalendarId {
             self.childCalendarId = nil
-            setValidationError("Source и Child не могут быть одинаковыми.")
+            setValidationError("Source и Child календари должны отличаться.")
             isValid = false
         }
         return isValid
@@ -229,28 +324,75 @@ final class AppViewModel: ObservableObject {
     }
 
     private func accessErrorMessage(for error: Error) -> String {
-        let hint = "Откройте System Settings -> Privacy & Security -> Calendars и выдайте доступ CalSync."
-        let resetHint = "Если CalSync не появляется в списке, выполните в Terminal: tccutil reset Calendar com.tumashev.CalSync, затем нажмите \"Запросить доступ\" снова."
+        let hint = "Разрешите CalSync доступ: Системные настройки → Конфиденциальность и безопасность → Календари."
         if let gatewayError = error as? EventKitGatewayError, gatewayError == .accessDenied {
-            return "Нет доступа к календарям. \(hint) \(resetHint)"
+            return "Нет доступа к календарям. \(hint)"
         }
-        return "Не удалось запросить доступ к календарям: \(error.localizedDescription). \(hint) \(resetHint)"
+        return "Не удалось запросить доступ к календарям: \(error.localizedDescription). \(hint)"
     }
 
-    private func applySyncUpdate(_ update: SyncEngineUpdate) {
+    func applySyncUpdate(_ update: SyncEngineUpdate) {
         switch update {
-        case .syncing:
+        case .syncing(let startedAt, let reasons):
             status = .syncing
-        case .completed(let lastSyncAt, let totalFetched, let created, let updated, let deleted):
-            self.lastSyncAt = lastSyncAt
-            totalFetchedCount = totalFetched
-            createdCount = created
-            updatedCount = updated
-            deletedCount = deleted
+            clearSyncCounts()
+            recordSyncAttempt(timestamp: startedAt, reasons: reasons, outcome: .running)
+        case .completed(
+            let finishedAt,
+            let reasons,
+            let totalFetched,
+            let created,
+            let updated,
+            let deleted
+        ):
+            let metrics = SyncAttemptSnapshot.Metrics(
+                totalFetched: totalFetched,
+                created: created,
+                updated: updated,
+                deleted: deleted
+            )
+            lastSuccessfulSyncAt = finishedAt
+            diagnosticsStore.lastSuccessfulSyncAt = finishedAt
+            recordSyncAttempt(
+                timestamp: finishedAt,
+                reasons: reasons,
+                outcome: .succeeded,
+                metrics: metrics
+            )
+            totalFetchedCount = metrics.totalFetched
+            createdCount = metrics.created
+            updatedCount = metrics.updated
+            deletedCount = metrics.deleted
             status = .idle
-        case .failed(let message):
+        case .failed(let finishedAt, let reasons, let message):
+            clearSyncCounts()
+            recordSyncAttempt(timestamp: finishedAt, reasons: reasons, outcome: .failed)
             status = .error(message)
             errors.append(message)
         }
+    }
+
+    private func recordSyncAttempt(
+        timestamp: Date,
+        reasons: Set<SyncReason>,
+        outcome: SyncAttemptSnapshot.Outcome,
+        metrics: SyncAttemptSnapshot.Metrics? = nil
+    ) {
+        lastSyncAttemptAt = timestamp
+        lastSyncReasons = reasons
+        lastSyncOutcome = outcome
+        diagnosticsStore.lastAttempt = SyncAttemptSnapshot(
+            timestamp: timestamp,
+            reasons: reasons,
+            outcome: outcome,
+            metrics: metrics
+        )
+    }
+
+    private func clearSyncCounts() {
+        totalFetchedCount = 0
+        createdCount = 0
+        updatedCount = 0
+        deletedCount = 0
     }
 }

@@ -7,13 +7,20 @@
 
 import AppKit
 
+@MainActor
 final class AppCoordinator: NSObject, NSApplicationDelegate {
     private let windowCoordinator = WindowCoordinator()
     private var statusBarController: StatusBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        statusBarController = StatusBarController(appCoordinator: self)
+        statusBarController = StatusBarController(
+            appCoordinator: self,
+            statusPublisher: windowCoordinator.statusPublisher
+        )
+        Task {
+            await windowCoordinator.onAppStart()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -23,17 +30,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     func showMainWindow() {
         NSApp.setActivationPolicy(.regular)
         windowCoordinator.showMainWindow()
-        Task { @MainActor in
-            await windowCoordinator.onAppStart()
-        }
     }
 
-    @MainActor
     func syncNowFromStatusBar() {
         windowCoordinator.syncNow()
     }
 
-    @MainActor
     func resetSyncFromStatusBar() {
         windowCoordinator.resetSync()
     }

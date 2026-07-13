@@ -10,20 +10,18 @@ import os
 
 struct PersistenceController {
     static let shared = PersistenceController()
-    static let inMemory = PersistenceController(inMemory: true)
-    static let preview = PersistenceController(inMemory: true)
 
     let container: NSPersistentContainer
-    private let logger = Logger(subsystem: "CalSync", category: "Persistence")
 
     init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: "CalSync")
+        container = NSPersistentContainer(
+            name: "CalSync",
+            managedObjectModel: CalSyncManagedObjectModel.make()
+        )
 
         let storeDescription = container.persistentStoreDescriptions.first ?? NSPersistentStoreDescription()
         storeDescription.shouldMigrateStoreAutomatically = true
         storeDescription.shouldInferMappingModelAutomatically = true
-        storeDescription.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
-        storeDescription.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
 
         if inMemory {
             storeDescription.type = NSInMemoryStoreType
@@ -32,19 +30,19 @@ struct PersistenceController {
 
         container.persistentStoreDescriptions = [storeDescription]
 
-        var loadError: Error?
+        let logger = Logger(subsystem: "CalSync", category: "Persistence")
         container.loadPersistentStores(completionHandler: { _, error in
             if let error {
-                loadError = error
+                logger.fault(
+                    "Failed to load persistent store: \(error.localizedDescription, privacy: .public)"
+                )
             }
         })
 
-        if let loadError {
-            logger.fault("Failed to load persistent store: \(loadError.localizedDescription, privacy: .public)")
-        }
-
         container.viewContext.automaticallyMergesChangesFromParent = true
-        container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        container.viewContext.mergePolicy = NSMergePolicy(
+            merge: .mergeByPropertyObjectTrumpMergePolicyType
+        )
         container.viewContext.undoManager = nil
     }
 }

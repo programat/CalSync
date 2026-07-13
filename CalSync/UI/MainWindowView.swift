@@ -8,153 +8,21 @@
 import SwiftUI
 
 struct MainWindowView: View {
-    @EnvironmentObject private var viewModel: AppViewModel
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                calendarsSection
-                syncWindowSection
-                statusSection
-                actionsSection
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(24)
-        }
-        .frame(minWidth: 520, minHeight: 520)
-    }
-
-    private var calendarsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Calendars")
-                .font(.headline)
-            Picker("Source Calendar", selection: $viewModel.sourceCalendarId) {
-                Text("Not selected").tag(String?.none)
-                ForEach(viewModel.calendars) { calendar in
-                    Text(calendarTitle(calendar)).tag(String?.some(calendar.id))
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: InterfaceMetrics.sectionSpacing) {
+                    CalendarSettingsView()
+                    SyncPreferencesView()
+                    SyncStatusView()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(InterfaceMetrics.cardPadding)
             }
-            Picker("Child Calendar", selection: $viewModel.childCalendarId) {
-                Text("Not selected").tag(String?.none)
-                ForEach(viewModel.calendars) { calendar in
-                    Text(calendarTitle(calendar))
-                        .tag(String?.some(calendar.id))
-                        .disabled(!calendar.isWritable)
-                        .help(calendar.isWritable ? "" : "Недоступен для записи / read-only")
-                }
-            }
+            Divider()
+            SyncActionBar()
         }
-    }
-
-    private var syncWindowSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Sync window")
-                .font(.headline)
-            HStack(spacing: 16) {
-                Stepper(value: $viewModel.daysBack, in: 0...365) {
-                    HStack {
-                        Text("Days back")
-                        TextField("", value: $viewModel.daysBack, format: .number)
-                            .frame(width: 60)
-                    }
-                }
-                Stepper(value: $viewModel.daysForward, in: 0...365) {
-                    HStack {
-                        Text("Days forward")
-                        TextField("", value: $viewModel.daysForward, format: .number)
-                            .frame(width: 60)
-                    }
-                }
-            }
-        }
-    }
-
-    private var statusSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Status")
-                .font(.headline)
-            HStack(spacing: 16) {
-                Text("Status: \(statusText(viewModel.status))")
-                Text("Last sync: \(formattedDate(viewModel.lastSyncAt))")
-            }
-            HStack(spacing: 16) {
-                Text("Total fetched: \(viewModel.totalFetchedCount)")
-                Text("Created: \(viewModel.createdCount)")
-                Text("Updated: \(viewModel.updatedCount)")
-                Text("Deleted: \(viewModel.deletedCount)")
-            }
-            if viewModel.errors.isEmpty {
-                Text("No errors")
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Errors")
-                        .font(.subheadline)
-                    ForEach(Array(viewModel.errors.enumerated()), id: \.offset) { _, error in
-                        Text(error)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            if isErrorStatus {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Для синхронизации требуется доступ к календарям в System Settings -> Privacy & Security -> Calendars.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("Запросить доступ") {
-                        Task {
-                            await viewModel.requestCalendarAccess()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var actionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Actions")
-                .font(.headline)
-            HStack(spacing: 12) {
-                Button("Sync now") {
-                    viewModel.syncNow()
-                }
-                Button("Reset sync") {
-                    viewModel.resetSync()
-                }
-            }
-        }
-    }
-
-    private func statusText(_ status: AppViewModel.Status) -> String {
-        switch status {
-        case .idle:
-            return "Idle"
-        case .syncing:
-            return "Syncing"
-        case .error(let message):
-            return message.map { "Error (\($0))" } ?? "Error"
-        }
-    }
-
-    private func formattedDate(_ date: Date?) -> String {
-        guard let date else { return "—" }
-        return date.formatted(date: .abbreviated, time: .standard)
-    }
-
-    private var isErrorStatus: Bool {
-        if case .error = viewModel.status {
-            return true
-        }
-        return false
-    }
-
-    private func calendarTitle(_ calendar: CalendarInfo) -> String {
-        guard let sourceTitle = calendar.sourceTitle, !sourceTitle.isEmpty else {
-            return calendar.title
-        }
-        return "\(calendar.title) (\(sourceTitle))"
+        .frame(minWidth: 640, minHeight: 540)
     }
 }
 
