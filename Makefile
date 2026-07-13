@@ -29,7 +29,7 @@ else
 CONFIGURATION := debug
 endif
 
-.PHONY: help build test bundle run debug logs telemetry verify clean reset
+.PHONY: help build test bundle run debug logs telemetry verify clean reset nya
 
 help: # show available commands
 	@printf "workspace $(COLOUR_BLUE)$(APP_NAME)$(END_COLOUR) Makefile\n"
@@ -65,3 +65,16 @@ clean: # remove generated build and distribution outputs
 
 reset: clean # reset this package's local SwiftPM state
 	@$(SWIFT) package $(SWIFT_PACKAGE_FLAGS) reset
+
+nya: # print nya
+	@printf '%s\n' \
+'⠄⠄⠄⣶⠄⠰⠟⢃⠄⢐⠄⠄⠄⠄⠄⡎⠄⠄⠄⡄⡾⠄⢰⣿⣇⠄⠄⡆⠄⠄⠄⠄' \
+'⠄⠄⢰⣿⠄⣼⣿⣿⣄⢠⢳⠄⠄⠄⠰⠄⠄⢀⣼⢿⣿⠄⣼⣿⣷⠄⣸⣿⠄⠄⠄⠄' \
+'⠄⠄⣼⠛⠄⠉⠉⠹⠟⠎⣷⡦⡀⠄⠄⠄⡰⡺⣯⣾⡫⠮⠭⠽⠿⠄⠿⠿⣰⠄⠄⠄' \
+'⠄⠄⠁⢠⣤⣄⢦⡐⠂⣌⢙⣿⡵⢀⡀⠘⢕⣿⣿⢋⣤⢠⡄⠄⠄⠠⣀⠄⠙⠄⠄⠄' \
+'⠄⠄⢳⣴⣿⣿⣻⣿⣿⣿⣿⣽⣾⣵⣿⣷⣜⣿⣿⣿⣿⣛⣿⣿⡿⢷⢿⣡⠆⠄⠄⠄' \
+'⠄⠄⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢿⡋⠄⠄⠂⠄' \
+'⠄⠄⠈⢦⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠝⢀⠄⠄⠄⠄' \
+'⠄⠄⠄⠁⣿⣿⣿⣿⣿⣿⣿⣏⣛⣛⣛⣛⣛⣹⣿⣿⣿⣿⣿⣿⣯⣽⠾⠁⠄⠄⠄⠄' \
+'⠄⠄⠄⠄⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣯⡕⠄⠄⠄⠄⠄⠄' \
+'⠄⠄⠄⠄⠄⠄⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⡟⠃⠄⠄⠄⠄⠄⠄⠄⠄'
